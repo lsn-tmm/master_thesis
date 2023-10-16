@@ -1,0 +1,2238 @@
+#INFO: **** input file is /Users/mario/Documents/GitHub/UniMi/tesi_alessandro_tammaro/nevpt2_old/aug-cc-pvtz/anion/R_1.00_qasm_nm/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,1.00)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_1.00/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../tomography/tests_oh/data/tomo_qasm_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Darwin', node='Marios-MacBook-Pro.local', release='20.6.0', version='Darwin Kernel Version 20.6.0: Mon Aug 30 06:12:21 PDT 2021; root:xnu-7195.141.6~3/RELEASE_X86_64', machine='x86_64', processor='i386')  Threads 1
+Python 3.7.9 (default, Aug 31 2020, 07:22:35) 
+[Clang 10.0.0 ]
+numpy 1.20.1  scipy 1.6.0
+Date: Thu Mar 24 16:19:38 2022
+PySCF version 1.7.6
+PySCF path  /Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 2
+[INPUT] num. electrons = 10
+[INPUT] charge = -1
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry True subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT]  1 O      0.000000000000   0.000000000000   0.000000000000 AA    0.000000000000   0.000000000000   0.000000000000 Bohr
+[INPUT]  2 H      0.000000000000   0.000000000000   1.000000000000 AA    0.000000000000   0.000000000000   1.889726124565 Bohr
+
+nuclear repulsion = 4.23341768736
+point group symmetry = Coov
+num. orbitals of irrep A1 = 23
+num. orbitals of irrep E1x = 14
+num. orbitals of irrep E1y = 14
+num. orbitals of irrep E2x = 7
+num. orbitals of irrep E2y = 7
+num. orbitals of irrep E3x = 2
+num. orbitals of irrep E3y = 2
+number of shells = 22
+number of NR pGTOs = 83
+number of NR cGTOs = 69
+basis = aug-cc-pvtz
+ecp = {}
+CPU time:         3.95
+Freeze 0 electrons in irreps []
+    10 free electrons in irreps A1 E1x E1y E2x E2y E3x E3y
+
+
+
+
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> ********
+method = SymAdaptedROHF-ROHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpbuu_pntg
+max_memory 4000 MB (current use 0 MB)
+num. doubly occ = 5  num. singly occ = 0
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpbuu_pntg
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 0 MB)
+Set conv_tol_grad to 3.16228e-05
+HOMO (E1x) = -0.429287553552275  LUMO (A1) = 0.0258949859232241
+Initial guess E= -75.2724917992097  |g|= 0.779579
+macro= 0  E= -75.3868541065116  delta_E= -0.114362  |g|= 0.779579  2 KF 8 JK
+macro= 1  E= -75.4091191486632  delta_E= -0.022265  |g|= 0.245659  2 KF 5 JK
+macro= 2  E= -75.4096562040097  delta_E= -0.000537055  |g|= 4.38754e-05  3 KF 10 JK
+macro= 3  E= -75.4096562040118  delta_E= -2.10321e-12  |g|= 7.73925e-06  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 4  E=-75.4096562040118  |g|= 7.73925e-06  total 9 KF 30 JK
+converged SCF energy = -75.4096562040118
+**** SCF Summaries ****
+Total Energy =                         -75.409656204011782
+Nuclear Repulsion Energy =               4.233417687360000
+One-electron Energy =                 -116.185782669563935
+Two-electron Energy =                   36.542708778192143
+Wave-function symmetry = Coov
+occupancy for each irrep:     A1  E1x  E1y  E2x  E2y  E3x  E3y
+double occ                     3    1    1    0    0    0    0
+single occ                     0    0    0    0    0    0    0
+**** MO energy ****
+                          Roothaan           | alpha              | beta
+MO #1   (A1  #1 ) energy= -20.1927640104287  | -20.1927640104287  | -20.1927640104287  occ= 2
+MO #2   (A1  #2 ) energy= -0.894029794180077 | -0.894029794180077 | -0.894029794180077 occ= 2
+MO #3   (A1  #3 ) energy= -0.24373611058185  | -0.24373611058185  | -0.24373611058185  occ= 2
+MO #4   (E1x #1 ) energy= -0.109826320699645 | -0.109826320699645 | -0.109826320699645 occ= 2
+MO #5   (E1y #1 ) energy= -0.109826320699644 | -0.109826320699644 | -0.109826320699644 occ= 2
+MO #6   (A1  #4 ) energy= 0.17878951511696   | 0.178789515116962  | 0.178789515116962  occ= 0
+MO #7   (A1  #5 ) energy= 0.329765827868435  | 0.32976582786844   | 0.32976582786844   occ= 0
+MO #8   (E1x #2 ) energy= 0.371463466146995  | 0.371463466146996  | 0.371463466146996  occ= 0
+MO #9   (E1y #2 ) energy= 0.371463466146993  | 0.371463466146993  | 0.371463466146993  occ= 0
+MO #10  (A1  #6 ) energy= 0.398167082858244  | 0.39816708285824   | 0.39816708285824   occ= 0
+MO #11  (A1  #7 ) energy= 0.491671580288559  | 0.491671580288561  | 0.491671580288561  occ= 0
+MO #12  (E1x #3 ) energy= 0.494051395552643  | 0.494051395552645  | 0.494051395552645  occ= 0
+MO #13  (E1y #3 ) energy= 0.494051395552639  | 0.494051395552639  | 0.494051395552639  occ= 0
+MO #14  (A1  #8 ) energy= 0.685315986061867  | 0.685315986061893  | 0.685315986061893  occ= 0
+MO #15  (A1  #9 ) energy= 0.930843323783459  | 0.930843323783472  | 0.930843323783472  occ= 0
+MO #16  (E2x #1 ) energy= 0.949861259237711  | 0.949861259237711  | 0.949861259237711  occ= 0
+MO #17  (E2y #1 ) energy= 0.949861259237713  | 0.949861259237713  | 0.949861259237713  occ= 0
+MO #18  (E1x #4 ) energy= 1.00471057628221   | 1.00471057628221   | 1.00471057628221   occ= 0
+MO #19  (E1y #4 ) energy= 1.00471057628221   | 1.00471057628221   | 1.00471057628221   occ= 0
+MO #20  (A1  #10) energy= 1.15921326911789   | 1.1592132691179    | 1.1592132691179    occ= 0
+MO #21  (E1x #5 ) energy= 1.17927788593186   | 1.17927788593186   | 1.17927788593186   occ= 0
+MO #22  (E1y #5 ) energy= 1.17927788593185   | 1.17927788593185   | 1.17927788593185   occ= 0
+MO #23  (E2x #2 ) energy= 1.21951995543382   | 1.21951995543382   | 1.21951995543382   occ= 0
+MO #24  (E2y #2 ) energy= 1.21951995543382   | 1.21951995543382   | 1.21951995543382   occ= 0
+MO #25  (A1  #11) energy= 1.23911483765613   | 1.23911483765611   | 1.23911483765611   occ= 0
+MO #26  (A1  #12) energy= 1.28446330722734   | 1.28446330722735   | 1.28446330722735   occ= 0
+MO #27  (E1x #6 ) energy= 1.33471826461864   | 1.33471826461864   | 1.33471826461864   occ= 0
+MO #28  (E1y #6 ) energy= 1.33471826461865   | 1.33471826461865   | 1.33471826461865   occ= 0
+MO #29  (E1x #7 ) energy= 1.81832355019679   | 1.81832355019679   | 1.81832355019679   occ= 0
+MO #30  (E1y #7 ) energy= 1.81832355019681   | 1.81832355019681   | 1.81832355019681   occ= 0
+MO #31  (A1  #13) energy= 2.0608887386884    | 2.06088873868849   | 2.06088873868849   occ= 0
+MO #32  (A1  #14) energy= 2.35630600149326   | 2.35630600149326   | 2.35630600149326   occ= 0
+MO #33  (E3x #1 ) energy= 2.42529693757847   | 2.42529693757847   | 2.42529693757847   occ= 0
+MO #34  (E3y #1 ) energy= 2.42529693757847   | 2.42529693757847   | 2.42529693757847   occ= 0
+MO #35  (E2x #3 ) energy= 2.52587898208927   | 2.52587898208927   | 2.52587898208927   occ= 0
+MO #36  (E2y #3 ) energy= 2.52587898208927   | 2.52587898208927   | 2.52587898208927   occ= 0
+MO #37  (E1x #8 ) energy= 2.64271226941621   | 2.64271226941621   | 2.64271226941621   occ= 0
+MO #38  (E1y #8 ) energy= 2.64271226941622   | 2.64271226941621   | 2.64271226941621   occ= 0
+MO #39  (E2x #4 ) energy= 2.68282577941478   | 2.68282577941478   | 2.68282577941478   occ= 0
+MO #40  (E2y #4 ) energy= 2.68282577941478   | 2.68282577941478   | 2.68282577941478   occ= 0
+MO #41  (A1  #15) energy= 2.82711360305635   | 2.82711360305636   | 2.82711360305636   occ= 0
+MO #42  (A1  #16) energy= 2.85044258523618   | 2.85044258523634   | 2.85044258523634   occ= 0
+MO #43  (E1x #9 ) energy= 3.11897144125911   | 3.11897144125911   | 3.11897144125911   occ= 0
+MO #44  (E1y #9 ) energy= 3.11897144125915   | 3.11897144125915   | 3.11897144125915   occ= 0
+MO #45  (A1  #17) energy= 3.90207828700149   | 3.90207828700149   | 3.90207828700149   occ= 0
+MO #46  (E2x #5 ) energy= 4.37755340970928   | 4.37755340970928   | 4.37755340970928   occ= 0
+MO #47  (E2y #5 ) energy= 4.37755340970928   | 4.37755340970928   | 4.37755340970928   occ= 0
+MO #48  (E1x #10) energy= 4.4676428768873    | 4.4676428768873    | 4.4676428768873    occ= 0
+MO #49  (E1y #10) energy= 4.4676428768873    | 4.4676428768873    | 4.4676428768873    occ= 0
+MO #50  (E1x #11) energy= 4.66529372930485   | 4.66529372930485   | 4.66529372930485   occ= 0
+MO #51  (E1y #11) energy= 4.66529372930486   | 4.66529372930485   | 4.66529372930485   occ= 0
+MO #52  (A1  #18) energy= 4.98203659834211   | 4.98203659834215   | 4.98203659834215   occ= 0
+MO #53  (A1  #19) energy= 5.41784400511298   | 5.41784400511303   | 5.41784400511303   occ= 0
+MO #54  (E1x #12) energy= 5.59321201471464   | 5.59321201471464   | 5.59321201471464   occ= 0
+MO #55  (E1y #12) energy= 5.59321201471463   | 5.59321201471463   | 5.59321201471463   occ= 0
+MO #56  (A1  #20) energy= 6.57017280846803   | 6.57017280846808   | 6.57017280846808   occ= 0
+MO #57  (E3x #2 ) energy= 6.89488446019376   | 6.89488446019376   | 6.89488446019376   occ= 0
+MO #58  (E3y #2 ) energy= 6.89488446019376   | 6.89488446019376   | 6.89488446019376   occ= 0
+MO #59  (E2x #6 ) energy= 7.02379600152138   | 7.02379600152137   | 7.02379600152137   occ= 0
+MO #60  (E2y #6 ) energy= 7.02379600152136   | 7.02379600152136   | 7.02379600152136   occ= 0
+MO #61  (E2x #7 ) energy= 7.44690340612513   | 7.44690340612513   | 7.44690340612513   occ= 0
+MO #62  (E2y #7 ) energy= 7.44690340612512   | 7.44690340612513   | 7.44690340612513   occ= 0
+MO #63  (E1x #13) energy= 7.51714524581693   | 7.51714524581693   | 7.51714524581693   occ= 0
+MO #64  (E1y #13) energy= 7.51714524581694   | 7.51714524581693   | 7.51714524581693   occ= 0
+MO #65  (E1x #14) energy= 7.63799658047166   | 7.63799658047165   | 7.63799658047165   occ= 0
+MO #66  (E1y #14) energy= 7.63799658047169   | 7.63799658047169   | 7.63799658047169   occ= 0
+MO #67  (A1  #21) energy= 7.71692308503918   | 7.71692308503919   | 7.71692308503919   occ= 0
+MO #68  (A1  #22) energy= 8.05255984289626   | 8.05255984289627   | 8.05255984289627   occ= 0
+MO #69  (A1  #23) energy= 12.7975090180701   | 12.79750901807     | 12.79750901807     occ= 0
+ ** Mulliken pop on meta-lowdin orthogonal AOs  **
+ ** Mulliken pop  **
+pop of  0 O 1s        2.00000
+pop of  0 O 2s        1.81825
+pop of  0 O 3s        0.01010
+pop of  0 O 4s        0.00127
+pop of  0 O 5s        0.00015
+pop of  0 O 2px       1.94057
+pop of  0 O 2py       1.94057
+pop of  0 O 2pz       1.39221
+pop of  0 O 3px       0.03635
+pop of  0 O 3py       0.03635
+pop of  0 O 3pz       0.00300
+pop of  0 O 4px       0.00143
+pop of  0 O 4py       0.00143
+pop of  0 O 4pz       0.00026
+pop of  0 O 5px       0.00003
+pop of  0 O 5py       0.00003
+pop of  0 O 5pz       0.00006
+pop of  0 O 3dxy      0.00000
+pop of  0 O 3dyz      0.00139
+pop of  0 O 3dz^2     0.00474
+pop of  0 O 3dxz      0.00139
+pop of  0 O 3dx2-y2    0.00000
+pop of  0 O 4dxy      0.00000
+pop of  0 O 4dyz      0.00023
+pop of  0 O 4dz^2     0.00029
+pop of  0 O 4dxz      0.00023
+pop of  0 O 4dx2-y2    0.00000
+pop of  0 O 5dxy      0.00000
+pop of  0 O 5dyz      0.00000
+pop of  0 O 5dz^2     0.00016
+pop of  0 O 5dxz      0.00000
+pop of  0 O 5dx2-y2    0.00000
+pop of  0 O 4f-3      0.00000
+pop of  0 O 4f-2      0.00000
+pop of  0 O 4f-1      0.00030
+pop of  0 O 4f 0      0.00055
+pop of  0 O 4f 1      0.00030
+pop of  0 O 4f 2      0.00000
+pop of  0 O 4f 3      0.00000
+pop of  0 O 5f-3      0.00000
+pop of  0 O 5f-2      0.00000
+pop of  0 O 5f-1      0.00009
+pop of  0 O 5f 0      0.00004
+pop of  0 O 5f 1      0.00009
+pop of  0 O 5f 2      0.00000
+pop of  0 O 5f 3      0.00000
+pop of  1 H 1s        0.75525
+pop of  1 H 2s        0.00651
+pop of  1 H 3s        0.00165
+pop of  1 H 4s        0.00020
+pop of  1 H 2px       0.01189
+pop of  1 H 2py       0.01189
+pop of  1 H 2pz       0.00093
+pop of  1 H 3px       0.00639
+pop of  1 H 3py       0.00639
+pop of  1 H 3pz       0.00367
+pop of  1 H 4px       0.00108
+pop of  1 H 4py       0.00108
+pop of  1 H 4pz       0.00042
+pop of  1 H 3dxy      0.00000
+pop of  1 H 3dyz      0.00002
+pop of  1 H 3dz^2     0.00027
+pop of  1 H 3dxz      0.00002
+pop of  1 H 3dx2-y2    0.00000
+pop of  1 H 4dxy      0.00000
+pop of  1 H 4dyz      0.00020
+pop of  1 H 4dz^2     0.00003
+pop of  1 H 4dxz      0.00020
+pop of  1 H 4dx2-y2    0.00000
+ ** Mulliken atomic charges  **
+charge of  0O =     -1.19192
+charge of  1H =      0.19192
+Dipole moment(X, Y, Z, Debye):  0.00000,  0.00000,  0.92425
+#INFO: **** input file is /Users/mario/Documents/GitHub/UniMi/tesi_alessandro_tammaro/nevpt2_old/aug-cc-pvtz/anion/R_1.00_qasm_nm/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,1.00)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_1.00/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../tomography/tests_oh/data/tomo_qasm_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Darwin', node='Marios-MacBook-Pro.local', release='20.6.0', version='Darwin Kernel Version 20.6.0: Mon Aug 30 06:12:21 PDT 2021; root:xnu-7195.141.6~3/RELEASE_X86_64', machine='x86_64', processor='i386')  Threads 1
+Python 3.7.9 (default, Aug 31 2020, 07:22:35) 
+[Clang 10.0.0 ]
+numpy 1.20.1  scipy 1.6.0
+Date: Thu Mar 24 16:19:40 2022
+PySCF version 1.7.6
+PySCF path  /Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        11.13
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpc9avtwlu
+max_memory 4000 MB (current use 0 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpc9avtwlu
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 0 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.109826320699638  LUMO = 0.769997535768179
+Initial guess E= -75.4096562040127  |g|= 3.22851e-07
+macro= 0  E= -75.4096562040128  delta_E= -8.52651e-14  |g|= 3.22851e-07  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.4096562040128  |g|= 3.22851e-07  total 2 KF 4 JK
+converged SCF energy = -75.4096562040128
+#INFO: **** input file is /Users/mario/Documents/GitHub/UniMi/tesi_alessandro_tammaro/nevpt2_old/aug-cc-pvtz/anion/R_1.00_qasm_nm/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,1.00)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_1.00/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../tomography/tests_oh/data/tomo_qasm_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Darwin', node='Marios-MacBook-Pro.local', release='20.6.0', version='Darwin Kernel Version 20.6.0: Mon Aug 30 06:12:21 PDT 2021; root:xnu-7195.141.6~3/RELEASE_X86_64', machine='x86_64', processor='i386')  Threads 1
+Python 3.7.9 (default, Aug 31 2020, 07:22:35) 
+[Clang 10.0.0 ]
+numpy 1.20.1  scipy 1.6.0
+Date: Thu Mar 24 16:19:41 2022
+PySCF version 1.7.6
+PySCF path  /Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        15.58
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpa0s3qtab
+max_memory 4000 MB (current use 0 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpa0s3qtab
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 0 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.109826516178495  LUMO = 0.769997457242721
+Initial guess E= -75.4096562040128  |g|= 6.87633e-08
+macro= 0  E= -75.4096562040128  delta_E= 0  |g|= 6.87633e-08  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.4096562040128  |g|= 6.87633e-08  total 2 KF 4 JK
+converged SCF energy = -75.4096562040128
+#INFO: **** input file is /Users/mario/Documents/GitHub/UniMi/tesi_alessandro_tammaro/nevpt2_old/aug-cc-pvtz/anion/R_1.00_qasm_nm/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,1.00)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_1.00/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../tomography/tests_oh/data/tomo_qasm_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Darwin', node='Marios-MacBook-Pro.local', release='20.6.0', version='Darwin Kernel Version 20.6.0: Mon Aug 30 06:12:21 PDT 2021; root:xnu-7195.141.6~3/RELEASE_X86_64', machine='x86_64', processor='i386')  Threads 1
+Python 3.7.9 (default, Aug 31 2020, 07:22:35) 
+[Clang 10.0.0 ]
+numpy 1.20.1  scipy 1.6.0
+Date: Thu Mar 24 16:19:42 2022
+PySCF version 1.7.6
+PySCF path  /Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        20.86
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpzn6bhw3g
+max_memory 4000 MB (current use 0 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /var/folders/7m/f464jvrs78n7m3djcnsxfxgr0000gn/T/tmpzn6bhw3g
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 0 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.10982651617946  LUMO = 0.178789516417854
+Initial guess E= -75.4096562040268  |g|= 1.51996e-06
+macro= 0  E= -75.4096562040276  delta_E= -7.10543e-13  |g|= 1.51996e-06  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.4096562040276  |g|= 1.51996e-06  total 2 KF 4 JK
+converged SCF energy = -75.4096562040276
+u+d contributions  -0.030589702797088905
+uu+dd contributions  -0.06886989262543491
+ud contributions  -0.16891722701064024
+u+d contributions  -0.0034752191016439904
+uu+dd contributions  -0.04166342553896889
+ud contributions  -0.14153093343071504
+----- VQE data ------
+target_sector:  None
+optimizer:  bfgs
+max_iter:  1000
+instance:  statevector_simulator
+shots:  1000
+ansatz:  q_uccsd
+initial_point:  None
+
+
+Overwritten attributes  get_ovlp get_hcore  of <class 'pyscf.soscf.newton_ah.newton.<locals>.SecondOrderRHF'>
+Overwritten attributes  get_ovlp get_hcore  of <class 'pyscf.scf.hf.RHF'>
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf/gto/mole.py:1089: UserWarning: Function mol.dumps drops attribute nao_nr because it is not JSON-serializable
+  warnings.warn(msg)
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf/gto/mole.py:1089: UserWarning: Function mol.dumps drops attribute energy_nuc because it is not JSON-serializable
+  warnings.warn(msg)
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/pyscf/fci/direct_nosym.py:179: UserWarning: direct_nosym.kernel is not able to diagonalize non-Hermitian Hamiltonian. If h1e and h2e is not hermtian, calling symmetric diagonlization in eig can lead to wrong results.
+  warnings.warn('direct_nosym.kernel is not able to diagonalize '
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/quantum_info/operators/symplectic/pauli.py:185: DeprecationWarning: Initializing Pauli from `Pauli(z=z, x=x)` kwargs is deprecated as of version 0.17.0 and will be removed no earlier than 3 months after the release date. Use tuple initialization `Pauli((z, x))` instead.
+  base_z, base_x, base_phase = self._from_array_deprecated(z, x)
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:431: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod = Pauli.sgn_prod(a_i[alpha], a_j[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/chemistry/fermionic_operator.py:459: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  pauli_prod_1 = Pauli.sgn_prod(a_i[alpha], a_k[beta])
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/aqua/operators/legacy/weighted_pauli_operator.py:291: DeprecationWarning: sgn_prod is deprecated and will be removed no earlier than 3 months after the release date. Use `dot` instead.
+  new_pauli, sign = Pauli.sgn_prod(existed_pauli, pauli)
+/Users/mario/anaconda3/envs/qiskit2021/lib/python3.7/site-packages/qiskit/aqua/operators/legacy/op_converter.py:122: DeprecationWarning: `to_spmatrix` is deprecated and will be removed no earlier than 3 months after the release date. Use `to_matrix(sparse=True)` instead.
+  hamiltonian += weight * pauli.to_spmatrix()
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+qse operators prepared for  u
+qse operators prepared for  d
+qse operators prepared for  uu
+qse operators prepared for  dd
+qse operators prepared for  ud
+In the tapering subroutine, i=0, E(i)=-74.958972, i_min=-1
+In the tapering subroutine, i=1, E(i)=-75.165920, i_min=0
+In the tapering subroutine, i=2, E(i)=-75.299830, i_min=1
+In the tapering subroutine, i=3, E(i)=-75.026814, i_min=2
+In the tapering subroutine, i=4, E(i)=-75.299830, i_min=2
+In the tapering subroutine, i=5, E(i)=-75.026814, i_min=2
+In the tapering subroutine, i=6, E(i)=-74.585888, i_min=2
+In the tapering subroutine, i=7, E(i)=-74.889380, i_min=2
+In the tapering subroutine, i=8, E(i)=-75.165920, i_min=2
+In the tapering subroutine, i=9, E(i)=-75.409656, i_min=2
+In the tapering subroutine, i=10, E(i)=-75.050860, i_min=9
+In the tapering subroutine, i=11, E(i)=-75.299830, i_min=9
+In the tapering subroutine, i=12, E(i)=-75.050860, i_min=9
+In the tapering subroutine, i=13, E(i)=-75.299830, i_min=9
+In the tapering subroutine, i=14, E(i)=-74.889380, i_min=9
+In the tapering subroutine, i=15, E(i)=-74.617322, i_min=9
+after tapering qubits(H) =  4
+qse operators tapered for  hamiltonian
+qse operators tapered for  qse_s_u
+qse operators tapered for  qse_h_u
+qse operators tapered for  qse_s_d
+qse operators tapered for  qse_h_d
+qse operators tapered for  qse_s_uu
+qse operators tapered for  qse_h_uu
+qse operators tapered for  qse_s_dd
+qse operators tapered for  qse_h_dd
+qse operators tapered for  qse_s_ud
+qse operators tapered for  qse_h_ud
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003477372425546282
+uu+dd contributions  -0.04163482716396556
+ud contributions  -0.14048948174287865
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0034576989379258623
+uu+dd contributions  -0.04162068117964177
+ud contributions  -0.1348489023762462
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0029830163229596033
+uu+dd contributions  -0.041170364055710534
+ud contributions  -0.1406485094609102
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003761036882501006
+uu+dd contributions  -0.041946689863511154
+ud contributions  -0.1417773541156165
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003612859704735467
+uu+dd contributions  -0.041794515859963986
+ud contributions  -0.14138691848429505
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004261308789184776
+uu+dd contributions  -0.04243043902308629
+ud contributions  -0.14193854224555427
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004014386413023048
+uu+dd contributions  -0.042224182043812945
+ud contributions  -0.14218539136860694
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0032119043040788197
+uu+dd contributions  -0.04136969588618313
+ud contributions  -0.14465657405520999
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.00368401645591596
+uu+dd contributions  -0.04185712406399872
+ud contributions  -0.1421236150611858
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0030489016619173488
+uu+dd contributions  -0.041229379285657335
+ud contributions  -0.1414651821448176
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004014261558801918
+uu+dd contributions  -0.04219652178788421
+ud contributions  -0.14024453832348674
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003831944273970653
+uu+dd contributions  -0.041996163164808156
+ud contributions  -0.14202155270477024
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0030677561129718155
+uu+dd contributions  -0.04123572142711982
+ud contributions  -0.14115925339558347
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003544072896419558
+uu+dd contributions  -0.041726084045900745
+ud contributions  -0.1415207705664263
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033872433255830395
+uu+dd contributions  -0.041576096803961356
+ud contributions  -0.14135873086166575
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0038727365529463488
+uu+dd contributions  -0.04202923530924145
+ud contributions  -0.1404243446886488
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003648066176761138
+uu+dd contributions  -0.04183510890935088
+ud contributions  -0.1432948672577883
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004552864878041473
+uu+dd contributions  -0.04272455525039118
+ud contributions  -0.14250288581013798
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0037819501905494556
+uu+dd contributions  -0.0419636213476973
+ud contributions  -0.14150690975372252
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0044118359210418776
+uu+dd contributions  -0.04257560239005526
+ud contributions  -0.14734557183494504
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003962824826440124
+uu+dd contributions  -0.04209709928954844
+ud contributions  -0.1417783454023551
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035045768674001145
+uu+dd contributions  -0.04169008640566794
+ud contributions  -0.14108073638730562
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036712790496131274
+uu+dd contributions  -0.04183226882510465
+ud contributions  -0.14162485155447638
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.00423878069263895
+uu+dd contributions  -0.042419324324178734
+ud contributions two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+ -0.14268423690496077
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036690009102881456
+uu+dd contributions  -0.0418576004109996
+ud contributions  -0.14193125411512436
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003639770911265376
+uu+dd contributions  -0.041807038439856094
+ud contributions  -0.14176527272579184
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035198807932008067
+uu+dd contributions  -0.04169280422325279
+ud contributions  -0.14159235606877368
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0038535771046123335
+uu+dd contributions  -0.041995033543123964
+ud contributions  -0.1420222969390154
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003796860076022651
+uu+dd contributions  -0.04196707440870206
+ud contributions  -0.1419374067039701
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033827474386675755
+uu+dd contributions  -0.04153028364146198
+ud contributions  -0.14143206145090473
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003507706936943261
+uu+dd contributions  -0.041655388943636754
+ud contributions  -0.14184680589832685
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003377160052627384
+uu+dd contributions  -0.041574504747075094
+ud contributions  -0.14137970012309573
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035013610784296327
+uu+dd contributions  -0.041681362170655364
+ud contributions  -0.14147660655787617
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0031690370740121297
+uu+dd contributions  -0.041356822479642466
+ud contributions  -0.14121454596048577
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003263852104664971
+uu+dd contributions  -0.04146401089294751
+ud contributions  -0.14128579532600635
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.00409968605754663
+uu+dd contributions  -0.04227057539421719
+ud contributions  -0.1420423930075109
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0038912417391570096
+uu+dd contributions  -0.04204668858771814
+ud contributions  -0.14280828257013964
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0041245884778066365
+uu+dd contributions  -0.04229038175016223
+ud contributions  -0.14217080834232199
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036332897459033326
+uu+dd contributions  -0.04179284736789255
+ud contributions  -0.14124552196593598
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003181070034134877
+uu+dd contributions  -0.04135907373106855
+ud contributions  -0.1412937874674398
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003929785716761657
+uu+dd contributions  -0.04209227324946542
+ud contributions  -0.13828690282825368
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003636331970699053
+uu+dd contributions  -0.04180494895911864
+ud contributions  -0.14175277437841124
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004219676557935572
+uu+dd contributions  -0.04240607249374855
+ud contributions  -0.14222103263104793
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0037851337633636735
+uu+dd contributions  -0.041952189453125954
+ud contributions  -0.1389215771136941
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003839122424173675
+uu+dd contributions  -0.04199963586363583
+ud contributions  -0.1416150689903349
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003455840687458864
+uu+dd contributions  -0.04163399423509725
+ud contributions  -0.14148128455436748
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004197082838982889
+uu+dd contributions  -0.04236483033640039
+ud contributions  -0.14266555167979167
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003482855112988495
+uu+dd contributions  -0.041679361143630335
+ud contributions  -0.14154546719248723
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003388266595346569
+uu+dd contributions  -0.04154689780927874
+ud contributions  -0.14149190701680345
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003594626620827297
+uu+dd contributions  -0.041765147233428675
+ud contributions  -0.12950002777783048
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0040113230596968506
+uu+dd contributions  -0.04216300474451537
+ud contributions  -0.14153861634244638
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036093555681865797
+uu+dd contributions  -0.041780298470409566
+ud contributions  -0.14156849069772837
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0031258166185302127
+uu+dd contributions  -0.04126501483891042
+ud contributions  -0.1410876837325393
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+
+u+d contributions  -0.0037487320535381885
+uu+dd contributions  -0.04192726496098273
+ud contributions  -0.14171977764354657
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003312679880765579
+uu+dd contributions  -0.041504671951151144
+ud contributions  -0.14133138717522134
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036197721687307744
+uu+dd contributions  -0.04180673642788078
+ud contributions  -0.14160428736096
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036765276671698287
+uu+dd contributions  -0.04186164542853786
+ud contributions  -0.14178991728126186
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036814974407255465
+uu+dd contributions  -0.04181370885795563
+ud contributions  -0.141560331958568
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036865090184662556
+uu+dd contributions  -0.04186079624126245
+ud contributions  -0.14180252911819477
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0037642367111017923
+uu+dd contributions  -0.041931492173664375
+ud contributions  -0.1416794276056998
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0034781753550231923
+uu+dd contributions  -0.041643498316646536
+ud contributions  -0.1411439013713267
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003792073036232686
+uu+dd contributions  -0.04198362088122035
+ud contributions  -0.1418992723550724
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004736562435953659
+uu+dd contributions  -0.04292148977325301
+ud contributions  -0.14275382652071075
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0032713231202331243
+uu+dd contributions  -0.04142540261948659
+ud contributions  -0.14128479362360508
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035122607462630914
+uu+dd contributions  -0.04166374821373404
+ud contributions  -0.14142564948001105
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033943205742773762
+uu+dd contributions  -0.041560999225323886
+ud contributions  -0.14123842044304172
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004044876658712173
+uu+dd contributions  -0.04220580829652051
+ud contributions  -0.14196532507899928
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004491653594095947
+uu+dd contributions  -0.04266206883331032
+ud contributions  -0.14239087131757266
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003505856410473403
+uu+dd contributions  -0.04170292039220885
+ud contributions  -0.14125871692500588
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004144986118007512
+uu+dd contributions  -0.042306585673260226
+ud contributions  -0.1424967497105611
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004008824742008361
+uu+dd contributions  -0.04215592494936781
+ud contributions  -0.14186438708387888
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0037159482933562626
+uu+dd contributions  -0.04185290898861677
+ud contributions  -0.1415533718682429
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004028665075753738
+uu+dd contributions  -0.04219423496972918
+ud contributions  -0.1421638547117979
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.00395375045103757
+uu+dd contributions  -0.04212118648593413
+ud contributions  -0.1419439863522676
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003809810603214218
+uu+dd contributions  -0.04195578202939353
+ud contributions  -0.14151335792882322
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004444797370590264
+uu+dd contributions  -0.04259821845387593
+ud contributions  -0.14237521441120551
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003356096138101116
+uu+dd contributions  -0.04154079842586993
+ud contributions  -0.1413066768799925
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003764119055836697
+uu+dd contributions  -0.041897065334806846
+ud contributions  -0.14185190731176714
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003564737573664041
+uu+dd contributions  -0.04173642596566818
+ud contributions  -0.14162655874271698
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033539460360049182
+uu+dd contributions  -0.0415068191788087
+ud contributions  -0.1412621919993415
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004048665107652004
+uu+dd contributions  -0.04221546568021286
+ud contributions  -0.1419221103314374
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003786737995015034
+uu+dd contributions  -0.041977477671378376
+ud contributions  -0.1417748252502579
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003502088932628418
+uu+dd contributions  -0.04170328479531409
+ud contributions two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+two_qubit_reduction only works with parity qubit mapping but you have jordan_wigner. We switch two_qubit_reduction to False.
+ -0.14137752403394951
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035284306398610725
+uu+dd contributions  -0.04170378170471648
+ud contributions  -0.14155848826900222
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003193768562246274
+uu+dd contributions  -0.04136128449041528
+ud contributions  -0.14116442024224035
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033296634228490753
+uu+dd contributions  -0.04151712152536529
+ud contributions  -0.14125058407082305
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0033087797947382856
+uu+dd contributions  -0.041513208168270796
+ud contributions  -0.14146860304599485
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004433669594618876
+uu+dd contributions  -0.042593444681632245
+ud contributions  -0.1423733422362439
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003978989092548897
+uu+dd contributions  -0.042151419218677856
+ud contributions  -0.14190971212855352
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003979066658521617
+uu+dd contributions  -0.04211922291422256
+ud contributions  -0.1418065139437194
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0034680697169963944
+uu+dd contributions  -0.041615099849184455
+ud contributions  -0.14136741240828224
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0034297641444090434
+uu+dd contributions  -0.04160158490271773
+ud contributions  -0.1417401922892415
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0032943329593850285
+uu+dd contributions  -0.0414569601002771
+ud contributions  -0.1408874274401483
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.003342357329657789
+uu+dd contributions  -0.04149100399919648
+ud contributions  -0.1412160838215662
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004770241576657278
+uu+dd contributions  -0.042931333917958246
+ud contributions  -0.1430045818690841
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0034034025924944418
+uu+dd contributions  -0.04158366947491223
+ud contributions  -0.14089629094565484
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0039683203791348485
+uu+dd contributions  -0.042145749387691694
+ud contributions  -0.14188414028520338
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0035173434724236692
+uu+dd contributions  -0.04170469298903782
+ud contributions  -0.141434839342565
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.0036772898658242333
+uu+dd contributions  -0.04184451685761981
+ud contributions  -0.1420637003067066
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+u+d contributions  -0.004062654379392953
+uu+dd contributions  -0.04224236789557084
+ud contributions  -0.14229594955314362

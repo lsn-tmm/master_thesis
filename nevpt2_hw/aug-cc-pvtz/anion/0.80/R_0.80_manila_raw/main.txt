@@ -1,0 +1,5109 @@
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../../bloch/src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_0.80/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../../tomography/hw/R_0.80/manila_raw_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab19.labcalcolo.lab', release='4.18.0-348.20.1.el8_5.x86_64', version='#1 SMP Thu Mar 10 20:59:28 UTC 2022', machine='x86_64')  Threads 12
+Python 3.9.7 (default, Sep 16 2021, 13:09:58) 
+[GCC 7.5.0]
+numpy 1.20.3  scipy 1.7.3
+Date: Fri Apr  1 09:16:50 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.9/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 2
+[INPUT] num. electrons = 10
+[INPUT] charge = -1
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry True subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT]  1 O      0.000000000000   0.000000000000   0.000000000000 AA    0.000000000000   0.000000000000   0.000000000000 Bohr
+[INPUT]  2 H      0.000000000000   0.000000000000   0.800000000000 AA    0.000000000000   0.000000000000   1.511780899652 Bohr
+
+nuclear repulsion = 5.2917721092
+point group symmetry = Coov
+num. orbitals of irrep A1 = 23
+num. orbitals of irrep E1x = 14
+num. orbitals of irrep E1y = 14
+num. orbitals of irrep E2x = 7
+num. orbitals of irrep E2y = 7
+num. orbitals of irrep E3x = 2
+num. orbitals of irrep E3y = 2
+number of shells = 22
+number of NR pGTOs = 83
+number of NR cGTOs = 69
+basis = aug-cc-pvtz
+ecp = {}
+CPU time:         3.93
+Freeze 0 electrons in irreps []
+    10 free electrons in irreps A1 E1x E1y E2x E2y E3x E3y
+
+
+
+
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> ********
+method = SymAdaptedROHF-ROHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmp3lowvx16
+max_memory 4000 MB (current use 280 MB)
+num. doubly occ = 5  num. singly occ = 0
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmp3lowvx16
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 280 MB)
+Set conv_tol_grad to 3.16228e-05
+HOMO (E1x) = -0.463439981048635  LUMO (A1) = 0.029968402426068
+Initial guess E= -75.2497489516147  |g|= 0.782021
+macro= 0  E= -75.380989030976  delta_E= -0.13124  |g|= 0.159366  3 KF 18 JK
+macro= 1  E= -75.3812789192435  delta_E= -0.000289888  |g|= 0.00232586  2 KF 8 JK
+macro= 2  E= -75.3812789193763  delta_E= -1.32829e-10  |g|= 1.32982e-05  1 KF 3 JK
+Canonicalize SCF orbitals
+macro X = 3  E=-75.3812789193763  |g|= 1.32982e-05  total 7 KF 33 JK
+converged SCF energy = -75.3812789193763
+**** SCF Summaries ****
+Total Energy =                         -75.381278919376285
+Nuclear Repulsion Energy =               5.291772109200000
+One-electron Energy =                 -118.109530286825759
+Two-electron Energy =                   37.436479258249484
+Wave-function symmetry = Coov
+occupancy for each irrep:     A1  E1x  E1y  E2x  E2y  E3x  E3y
+double occ                     3    1    1    0    0    0    0
+single occ                     0    0    0    0    0    0    0
+**** MO energy ****
+                          Roothaan           | alpha              | beta
+MO #1   (A1  #1 ) energy= -20.1578064192914  | -20.1578064192914  | -20.1578064192914  occ= 2
+MO #2   (A1  #2 ) energy= -0.959617653782668 | -0.959617653782668 | -0.959617653782668 occ= 2
+MO #3   (A1  #3 ) energy= -0.285569940446556 | -0.285569940446555 | -0.285569940446555 occ= 2
+MO #4   (E1x #1 ) energy= -0.107645935821444 | -0.107645935821444 | -0.107645935821444 occ= 2
+MO #5   (E1y #1 ) energy= -0.107645935821445 | -0.107645935821445 | -0.107645935821445 occ= 2
+MO #6   (A1  #4 ) energy= 0.17849261047339   | 0.178492610473381  | 0.178492610473381  occ= 0
+MO #7   (A1  #5 ) energy= 0.327179254771339  | 0.327179254771313  | 0.327179254771313  occ= 0
+MO #8   (E1x #2 ) energy= 0.36176902618003   | 0.36176902618003   | 0.36176902618003   occ= 0
+MO #9   (E1y #2 ) energy= 0.361769026180034  | 0.361769026180034  | 0.361769026180034  occ= 0
+MO #10  (A1  #6 ) energy= 0.39976813018177   | 0.399768130181754  | 0.399768130181754  occ= 0
+MO #11  (A1  #7 ) energy= 0.494019594840762  | 0.494019594840748  | 0.494019594840748  occ= 0
+MO #12  (E1x #3 ) energy= 0.505541697983208  | 0.505541697983211  | 0.505541697983211  occ= 0
+MO #13  (E1y #3 ) energy= 0.505541697983189  | 0.505541697983188  | 0.505541697983188  occ= 0
+MO #14  (A1  #8 ) energy= 0.712278788425372  | 0.712278788425292  | 0.712278788425292  occ= 0
+MO #15  (E2x #1 ) energy= 0.956141610393599  | 0.956141610393599  | 0.956141610393599  occ= 0
+MO #16  (E2y #1 ) energy= 0.956141610393601  | 0.956141610393601  | 0.956141610393601  occ= 0
+MO #17  (A1  #9 ) energy= 0.976143794466902  | 0.976143794466889  | 0.976143794466889  occ= 0
+MO #18  (E1x #4 ) energy= 1.01570259358127   | 1.01570259358127   | 1.01570259358127   occ= 0
+MO #19  (E1y #4 ) energy= 1.01570259358124   | 1.01570259358124   | 1.01570259358124   occ= 0
+MO #20  (E1x #5 ) energy= 1.16820774353733   | 1.16820774353733   | 1.16820774353733   occ= 0
+MO #21  (E1y #5 ) energy= 1.16820774353732   | 1.16820774353732   | 1.16820774353732   occ= 0
+MO #22  (A1  #10) energy= 1.17384233396636   | 1.17384233396628   | 1.17384233396628   occ= 0
+MO #23  (A1  #11) energy= 1.2144035371174    | 1.2144035371174    | 1.2144035371174    occ= 0
+MO #24  (E2x #2 ) energy= 1.23831366151019   | 1.23831366151019   | 1.23831366151019   occ= 0
+MO #25  (E2y #2 ) energy= 1.23831366151018   | 1.23831366151019   | 1.23831366151019   occ= 0
+MO #26  (E1x #6 ) energy= 1.33934516878813   | 1.33934516878813   | 1.33934516878813   occ= 0
+MO #27  (E1y #6 ) energy= 1.33934516878812   | 1.33934516878812   | 1.33934516878812   occ= 0
+MO #28  (A1  #12) energy= 1.42526425444174   | 1.42526425444174   | 1.42526425444174   occ= 0
+MO #29  (E1x #7 ) energy= 1.9488487646928    | 1.9488487646928    | 1.9488487646928    occ= 0
+MO #30  (E1y #7 ) energy= 1.94884876469273   | 1.94884876469273   | 1.94884876469273   occ= 0
+MO #31  (A1  #13) energy= 2.00136977378267   | 2.00136977378271   | 2.00136977378271   occ= 0
+MO #32  (E3x #1 ) energy= 2.42451472958257   | 2.42451472958258   | 2.42451472958258   occ= 0
+MO #33  (E3y #1 ) energy= 2.42451472958257   | 2.42451472958257   | 2.42451472958257   occ= 0
+MO #34  (E2x #3 ) energy= 2.53558558979747   | 2.53558558979747   | 2.53558558979747   occ= 0
+MO #35  (E2y #3 ) energy= 2.53558558979747   | 2.53558558979747   | 2.53558558979747   occ= 0
+MO #36  (A1  #14) energy= 2.54455663840462   | 2.54455663840465   | 2.54455663840465   occ= 0
+MO #37  (E1x #8 ) energy= 2.69483322079367   | 2.69483322079367   | 2.69483322079367   occ= 0
+MO #38  (E1y #8 ) energy= 2.69483322079368   | 2.69483322079368   | 2.69483322079368   occ= 0
+MO #39  (E2x #4 ) energy= 2.74637675130158   | 2.74637675130158   | 2.74637675130158   occ= 0
+MO #40  (E2y #4 ) energy= 2.74637675130158   | 2.74637675130158   | 2.74637675130158   occ= 0
+MO #41  (A1  #15) energy= 2.74833027840827   | 2.74833027840833   | 2.74833027840833   occ= 0
+MO #42  (A1  #16) energy= 3.08325972175955   | 3.08325972175957   | 3.08325972175957   occ= 0
+MO #43  (E1x #9 ) energy= 3.09931279809422   | 3.09931279809422   | 3.09931279809422   occ= 0
+MO #44  (E1y #9 ) energy= 3.09931279809414   | 3.09931279809414   | 3.09931279809414   occ= 0
+MO #45  (A1  #17) energy= 4.17197844223334   | 4.17197844223335   | 4.17197844223335   occ= 0
+MO #46  (E1x #10) energy= 4.58871465493696   | 4.58871465493696   | 4.58871465493696   occ= 0
+MO #47  (E1y #10) energy= 4.58871465493698   | 4.58871465493697   | 4.58871465493697   occ= 0
+MO #48  (E2x #5 ) energy= 4.59766899523274   | 4.59766899523274   | 4.59766899523274   occ= 0
+MO #49  (E2y #5 ) energy= 4.59766899523274   | 4.59766899523273   | 4.59766899523273   occ= 0
+MO #50  (E1x #11) energy= 4.81118518390987   | 4.81118518390987   | 4.81118518390987   occ= 0
+MO #51  (E1y #11) energy= 4.81118518390987   | 4.81118518390987   | 4.81118518390987   occ= 0
+MO #52  (A1  #18) energy= 5.12971604905766   | 5.12971604905771   | 5.12971604905771   occ= 0
+MO #53  (E1x #12) energy= 6.12153265241579   | 6.12153265241579   | 6.12153265241579   occ= 0
+MO #54  (E1y #12) energy= 6.12153265241575   | 6.12153265241575   | 6.12153265241575   occ= 0
+MO #55  (A1  #19) energy= 6.2160600955755    | 6.21606009557556   | 6.21606009557556   occ= 0
+MO #56  (A1  #20) energy= 6.64861289751957   | 6.64861289751958   | 6.64861289751958   occ= 0
+MO #57  (E3x #2 ) energy= 6.89650515852166   | 6.89650515852166   | 6.89650515852166   occ= 0
+MO #58  (E3y #2 ) energy= 6.89650515852166   | 6.89650515852166   | 6.89650515852166   occ= 0
+MO #59  (E2x #6 ) energy= 7.13811674920923   | 7.13811674920925   | 7.13811674920925   occ= 0
+MO #60  (E2y #6 ) energy= 7.13811674920925   | 7.13811674920927   | 7.13811674920927   occ= 0
+MO #61  (E2x #7 ) energy= 7.44918188911252   | 7.44918188911252   | 7.44918188911252   occ= 0
+MO #62  (E2y #7 ) energy= 7.44918188911254   | 7.44918188911254   | 7.44918188911254   occ= 0
+MO #63  (E1x #13) energy= 7.51285107597153   | 7.51285107597153   | 7.51285107597153   occ= 0
+MO #64  (E1y #13) energy= 7.51285107597155   | 7.51285107597155   | 7.51285107597155   occ= 0
+MO #65  (E1x #14) energy= 8.25856935789876   | 8.25856935789875   | 8.25856935789875   occ= 0
+MO #66  (E1y #14) energy= 8.25856935789876   | 8.25856935789875   | 8.25856935789875   occ= 0
+MO #67  (A1  #21) energy= 8.52988674960612   | 8.52988674960612   | 8.52988674960612   occ= 0
+MO #68  (A1  #22) energy= 8.77629261006478   | 8.77629261006479   | 8.77629261006479   occ= 0
+MO #69  (A1  #23) energy= 16.9317434766548   | 16.9317434766548   | 16.9317434766548   occ= 0
+ ** Mulliken pop on meta-lowdin orthogonal AOs  **
+ ** Mulliken pop  **
+pop of  0 O 1s        1.99999
+pop of  0 O 2s        1.71050
+pop of  0 O 3s        0.01343
+pop of  0 O 4s        0.00234
+pop of  0 O 5s        0.00025
+pop of  0 O 2px       1.93701
+pop of  0 O 2py       1.93701
+pop of  0 O 2pz       1.56775
+pop of  0 O 3px       0.03604
+pop of  0 O 3py       0.03604
+pop of  0 O 3pz       0.00297
+pop of  0 O 4px       0.00117
+pop of  0 O 4py       0.00117
+pop of  0 O 4pz       0.00040
+pop of  0 O 5px       0.00008
+pop of  0 O 5py       0.00008
+pop of  0 O 5pz       0.00022
+pop of  0 O 3dxy      0.00000
+pop of  0 O 3dyz      0.00271
+pop of  0 O 3dz^2     0.01108
+pop of  0 O 3dxz      0.00271
+pop of  0 O 3dx2-y2    0.00000
+pop of  0 O 4dxy      0.00000
+pop of  0 O 4dyz      0.00029
+pop of  0 O 4dz^2     0.00052
+pop of  0 O 4dxz      0.00029
+pop of  0 O 4dx2-y2    0.00000
+pop of  0 O 5dxy      0.00000
+pop of  0 O 5dyz      0.00000
+pop of  0 O 5dz^2     0.00024
+pop of  0 O 5dxz      0.00000
+pop of  0 O 5dx2-y2    0.00000
+pop of  0 O 4f-3      0.00000
+pop of  0 O 4f-2      0.00000
+pop of  0 O 4f-1      0.00040
+pop of  0 O 4f 0      0.00166
+pop of  0 O 4f 1      0.00040
+pop of  0 O 4f 2      0.00000
+pop of  0 O 4f 3      0.00000
+pop of  0 O 5f-3      0.00000
+pop of  0 O 5f-2      0.00000
+pop of  0 O 5f-1      0.00004
+pop of  0 O 5f 0      0.00003
+pop of  0 O 5f 1      0.00004
+pop of  0 O 5f 2      0.00000
+pop of  0 O 5f 3      0.00000
+pop of  1 H 1s        0.65896
+pop of  1 H 2s        0.01707
+pop of  1 H 3s        0.00713
+pop of  1 H 4s        0.00086
+pop of  1 H 2px       0.01299
+pop of  1 H 2py       0.01299
+pop of  1 H 2pz       0.00094
+pop of  1 H 3px       0.00749
+pop of  1 H 3py       0.00749
+pop of  1 H 3pz       0.00214
+pop of  1 H 4px       0.00142
+pop of  1 H 4py       0.00142
+pop of  1 H 4pz       0.00043
+pop of  1 H 3dxy      0.00000
+pop of  1 H 3dyz      0.00019
+pop of  1 H 3dz^2     0.00084
+pop of  1 H 3dxz      0.00019
+pop of  1 H 3dx2-y2    0.00000
+pop of  1 H 4dxy      0.00000
+pop of  1 H 4dyz      0.00016
+pop of  1 H 4dz^2     0.00025
+pop of  1 H 4dxz      0.00016
+pop of  1 H 4dx2-y2    0.00000
+ ** Mulliken atomic charges  **
+charge of  0O =     -1.26688
+charge of  1H =      0.26688
+Dipole moment(X, Y, Z, Debye):  0.00000,  0.00000,  1.15435
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../../bloch/src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_0.80/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../../tomography/hw/R_0.80/manila_raw_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab19.labcalcolo.lab', release='4.18.0-348.20.1.el8_5.x86_64', version='#1 SMP Thu Mar 10 20:59:28 UTC 2022', machine='x86_64')  Threads 12
+Python 3.9.7 (default, Sep 16 2021, 13:09:58) 
+[GCC 7.5.0]
+numpy 1.20.3  scipy 1.7.3
+Date: Fri Apr  1 09:16:51 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.9/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        14.05
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmpoj9xxmzi
+max_memory 4000 MB (current use 327 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmpoj9xxmzi
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 327 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.107645935821449  LUMO = 0.966517835675212
+Initial guess E= -75.3812789193772  |g|= 2.14043e-07
+macro= 0  E= -75.3812789193773  delta_E= -2.84217e-14  |g|= 2.14043e-07  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.3812789193773  |g|= 2.14043e-07  total 2 KF 4 JK
+converged SCF energy = -75.3812789193773
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../../bloch/src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_0.80/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../../tomography/hw/R_0.80/manila_raw_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab19.labcalcolo.lab', release='4.18.0-348.20.1.el8_5.x86_64', version='#1 SMP Thu Mar 10 20:59:28 UTC 2022', machine='x86_64')  Threads 12
+Python 3.9.7 (default, Sep 16 2021, 13:09:58) 
+[GCC 7.5.0]
+numpy 1.20.3  scipy 1.7.3
+Date: Fri Apr  1 09:16:52 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.9/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        18.18
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmpww4xy265
+max_memory 4000 MB (current use 325 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmpww4xy265
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 325 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.107646045824239  LUMO = 0.966517801635849
+Initial guess E= -75.3812789193772  |g|= 2.31545e-07
+macro= 0  E= -75.3812789193773  delta_E= -2.84217e-14  |g|= 2.31545e-07  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.3812789193773  |g|= 2.31545e-07  total 2 KF 4 JK
+converged SCF energy = -75.3812789193773
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../../bloch/src/')
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='aug-cc-pvtz',spin=0,charge=-1,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+'''
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s frozen] FCI energy %.12f \n" % np.nan) 
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+'''
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+outfile.write("IAO, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+outfile.write("IAO, [1s,2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+outfile.write("FULL, [1s,2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+outfile.write("FULL, [1s,2s frozen] FCI energy %.12f \n" % np.nan)
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+FCI [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+x = np.load('../R_0.80/vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("VQE(Ry) energy (I) %.12f \n" % x['energy'])
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+y = np.load('../../../../../tomography/hw/R_0.80/manila_raw_bloch.npy',allow_pickle=True).item()['anion_aug-cc-pvtz']
+nsample = 100
+E = np.zeros(nsample)
+for i in range(nsample):
+    yi = np.zeros(y.shape)
+    for r in range(yi.shape[0]):
+        yi[r,0] = np.random.normal(y[r,0],y[r,1])
+    SOLVER.set_quantum_variables(VQE_settings,with_bloch_vector=True,bloch_vector=yi)
+    Ei = SOLVER.compute_nevpt2_energy()
+    outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy %.12f \n" % Ei)
+    E[i] = Ei
+outfile.write("VQE(Ry)+QSE [1s,2s frozen] NEVPT2 energy ---- FINAL AVERAGE ---- %.12f +/- %.12f \n" % (np.mean(E),np.std(E)))
+
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab19.labcalcolo.lab', release='4.18.0-348.20.1.el8_5.x86_64', version='#1 SMP Thu Mar 10 20:59:28 UTC 2022', machine='x86_64')  Threads 12
+Python 3.9.7 (default, Sep 16 2021, 13:09:58) 
+[GCC 7.5.0]
+numpy 1.20.3  scipy 1.7.3
+Date: Fri Apr  1 09:16:53 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.9/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        21.50
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.hf.RHF'> ********
+method = RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmp143gid2q
+max_memory 4000 MB (current use 488 MB)
+******** <class 'pyscf.scf.hf.RHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/nevpt2_hw/aug-cc-pvtz/anion/0.80/R_0.80_manila_raw/tmp143gid2q
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 488 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.107646045825883  LUMO = 0.178492611612443
+Initial guess E= -75.3812789193813  |g|= 3.06067e-06
+macro= 0  E= -75.3812789193828  delta_E= -1.4353e-12  |g|= 3.06067e-06  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 1  E=-75.3812789193828  |g|= 3.06067e-06  total 2 KF 4 JK
+converged SCF energy = -75.3812789193828
+ >>> u+d contributions  -0.01921707972867878 
+
+ >>> uu+dd contributions  -0.060568223007583286 
+
+ >>> ud contributions  -0.16862785522271298 
+
+ >>> final result  -75.55447493771875 
+
+ >>> u+d contributions  -0.001958650200403252 
+
+ >>> uu+dd contributions  -0.04326742378863328 
+
+ >>> ud contributions  -0.15124533237466484 
+
+ >>> final result  -75.53709241487071 
+
+----- VQE data ------
+target_sector:  None
+optimizer:  bfgs
+max_iter:  1000
+instance:  statevector_simulator
+shots:  1000
+ansatz:  q_uccsd
+initial_point:  None
+
+
+qse operators prepared for  u
+qse operators prepared for  d
+qse operators prepared for  uu
+qse operators prepared for  dd
+qse operators prepared for  ud
+In the tapering subroutine, i=0, E(i)=-74.678089, i_min=-1
+In the tapering subroutine, i=1, E(i)=-75.095709, i_min=0
+In the tapering subroutine, i=2, E(i)=-75.273633, i_min=1
+In the tapering subroutine, i=3, E(i)=-74.800854, i_min=2
+In the tapering subroutine, i=4, E(i)=-75.273633, i_min=2
+In the tapering subroutine, i=5, E(i)=-74.800854, i_min=2
+In the tapering subroutine, i=6, E(i)=-74.564632, i_min=2
+In the tapering subroutine, i=7, E(i)=-74.668963, i_min=2
+In the tapering subroutine, i=8, E(i)=-75.095709, i_min=2
+In the tapering subroutine, i=9, E(i)=-75.381279, i_min=2
+In the tapering subroutine, i=10, E(i)=-74.826918, i_min=9
+In the tapering subroutine, i=11, E(i)=-75.273633, i_min=9
+In the tapering subroutine, i=12, E(i)=-74.826918, i_min=9
+In the tapering subroutine, i=13, E(i)=-75.273633, i_min=9
+In the tapering subroutine, i=14, E(i)=-74.668963, i_min=9
+In the tapering subroutine, i=15, E(i)=-74.595874, i_min=9
+after tapering qubits(H) =  4
+qse operators tapered for  hamiltonian
+qse operators tapered for  qse_s_u
+qse operators tapered for  qse_h_u
+qse operators tapered for  qse_s_d
+qse operators tapered for  qse_h_d
+qse operators tapered for  qse_s_uu
+qse operators tapered for  qse_h_uu
+qse operators tapered for  qse_s_dd
+qse operators tapered for  qse_h_dd
+qse operators tapered for  qse_s_ud
+qse operators tapered for  qse_h_ud
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0951508 0.7664943 0.8566078 0.9077869 
+
+ saved energies -74.8758766 -74.6555872 -74.5480664 -74.3198849 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1014119 0.8341408 0.8566078 0.9077869 
+
+ saved energies -74.7403501 -74.6546538 -74.5450648 -73.3725217 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0315046 0.0647826 0.0840151 0.7290048 0.7482373 0.7815153 
+
+ saved energies -74.4978382 -74.3691294 -74.3174603 -74.1190607 -73.9255195 -72.6739506 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0343739 0.0684584 0.0820787 0.7678950 0.7815153 0.8155998 
+
+ saved energies -74.4965257 -74.2815704 -74.0831956 -73.4864851 -72.6312632 -71.6841135 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0246665 0.0343739 0.0469258 0.0647826 0.0785834 0.0820787 0.0840151 0.7290048 0.7305894 0.7482373 0.7678950 0.7815153 0.7815153 0.8155998 0.8571094 0.9083500 
+
+ saved energies -74.4971819 -74.4346970 -74.3434264 -74.2832714 -74.2269676 -74.0836856 -74.0400102 -74.0036695 -73.8949480 -73.8500859 -73.6869379 -73.5689477 -73.5020201 -73.4670144 -72.6341590 -72.4839657 
+
+ >>> u+d contributions  -0.022031116990983854 
+
+ >>> uu+dd contributions  -0.05422308916428933 
+
+ >>> ud contributions  -0.13689524418274804 
+
+ >>> final result  -75.52259820358131 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0918640 0.7612005 0.8598417 0.9062004 
+
+ saved energies -74.8854210 -74.6393577 -74.5472937 -74.3574047 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1019645 0.8341085 0.8598417 0.9062004 
+
+ saved energies -74.7266677 -74.6380877 -74.5442691 -73.3876182 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0268931 0.0647156 0.0829416 0.7266117 0.7448377 0.7826602 
+
+ saved energies -74.4894048 -74.3753698 -74.3182906 -74.1607255 -73.9024658 -72.5979382 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0388430 0.0683973 0.0814562 0.7696014 0.7826602 0.8122145 
+
+ saved energies -74.4880933 -74.2640205 -74.0830719 -73.2818368 -72.5822335 -71.5303793 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0209551 0.0388430 0.0436845 0.0647156 0.0758354 0.0814562 0.0829416 0.7259055 0.7266117 0.7448377 0.7696014 0.7826602 0.7826602 0.8122145 0.8597953 0.9073386 
+
+ saved energies -74.4887490 -74.4262641 -74.3470104 -74.2840972 -74.2121186 -74.1825033 -74.1238718 -74.0399028 -73.9879321 -73.8722601 -73.7329350 -73.5103164 -73.4571162 -73.2666285 -72.5858989 -72.4377634 
+
+ >>> u+d contributions  -0.022427216426638148 
+
+ >>> uu+dd contributions  -0.05450880977844819 
+
+ >>> ud contributions  -0.13690608863237044 
+
+ >>> final result  -75.52260904803093 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0955250 0.7646399 0.8600259 0.9102344 
+
+ saved energies -74.9093198 -74.6499711 -74.5443109 -74.4122483 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1037706 0.8352661 0.8600259 0.9102344 
+
+ saved energies -74.7570247 -74.6489047 -74.5412382 -73.4165489 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0322406 0.0668826 0.0853736 0.7298390 0.7483300 0.7829720 
+
+ saved energies -74.4938065 -74.3668862 -74.3140375 -74.1102082 -73.9018018 -72.6716303 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0375235 0.0716765 0.0838143 0.7708342 0.7829720 0.8171250 
+
+ saved energies -74.4924686 -74.2723320 -74.0775123 -73.3837233 -72.5946537 -71.6627656 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0272073 0.0375235 0.0445234 0.0668826 0.0768539 0.0838143 0.0853736 0.7298390 0.7309969 0.7483300 0.7708342 0.7829720 0.7829720 0.8171250 0.8607011 0.9108021 
+
+ saved energies -74.4931376 -74.4306526 -74.3403894 -74.2798275 -74.2185258 -74.2149336 -74.0749438 -74.0344097 -73.9949439 -73.8717374 -73.6956171 -73.5254857 -73.4841471 -73.3662489 -72.6047601 -72.5981370 
+
+ >>> u+d contributions  -0.02306999754014059 
+
+ >>> uu+dd contributions  -0.05531106094039884 
+
+ >>> ud contributions  -0.13819922736350965 
+
+ >>> final result  -75.52390218676207 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946208 0.7683812 0.8627084 0.9089007 
+
+ saved energies -74.9067234 -74.6451326 -74.5509890 -74.4353449 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1002619 0.8353151 0.8627084 0.9089007 
+
+ saved energies -74.7636469 -74.6441193 -74.5481391 -73.5285626 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0345428 0.0659754 0.0837542 0.7335514 0.7513302 0.7827628 
+
+ saved energies -74.5000566 -74.3580961 -74.3105289 -74.0755069 -73.9007493 -72.6008843 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0374068 0.0708304 0.0805655 0.7730277 0.7827628 0.8161863 
+
+ saved energies -74.4987652 -74.2682773 -74.0906473 -73.3534510 -72.6406733 -71.7020710 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0240001 0.0374068 0.0460834 0.0659754 0.0772563 0.0805655 0.0837542 0.7327485 0.7335514 0.7513302 0.7730277 0.7827628 0.7827628 0.8161863 0.8639129 0.9091965 
+
+ saved energies -74.4994109 -74.4369260 -74.3321315 -74.2767752 -74.2141716 -74.1908781 -74.0469843 -74.0413379 -74.0212020 -73.8709492 -73.6946555 -73.6621280 -73.5161849 -73.3373049 -72.9547309 -72.6432429 
+
+ >>> u+d contributions  -0.02286855079629059 
+
+ >>> uu+dd contributions  -0.05515417838594929 
+
+ >>> ud contributions  -0.1380197249257227 
+
+ >>> final result  -75.52372268432428 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0947918 0.7669146 0.8580255 0.9125027 
+
+ saved energies -74.9107482 -74.6522301 -74.5492938 -74.3863287 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1025572 0.8373530 0.8580255 0.9125027 
+
+ saved energies -74.7463189 -74.6510319 -74.5464599 -73.5518097 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0334748 0.0615662 0.0871024 0.7290149 0.7545511 0.7826425 
+
+ saved energies -74.4986572 -74.3806660 -74.2976462 -74.2232111 -73.8406274 -72.7044489 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0366796 0.0725767 0.0852545 0.7699647 0.7826425 0.8185396 
+
+ saved energies -74.4974176 -74.2743384 -74.0779404 -73.3975523 -72.6535052 -71.6949560 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0262067 0.0366796 0.0452740 0.0615662 0.0777580 0.0852545 0.0871024 0.7290149 0.7341050 0.7545511 0.7699647 0.7826425 0.7826425 0.8185396 0.8587160 0.9127701 
+
+ saved energies -74.4980374 -74.4355525 -74.3526683 -74.2640679 -74.2224915 -74.1845875 -74.0466833 -74.0343539 -73.8166169 -73.8123914 -73.7453217 -73.5820833 -73.5386853 -73.3802612 -73.2053950 -72.6558526 
+
+ >>> u+d contributions  -0.022742230661279648 
+
+ >>> uu+dd contributions  -0.05505000652740832 
+
+ >>> ud contributions  -0.13799064550381343 
+
+ >>> final result  -75.52369360490238 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0937183 0.7642205 0.8620728 0.9132446 
+
+ saved energies -74.9057509 -74.7011710 -74.6465926 -74.5413606 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1014815 0.8393249 0.8620728 0.9132446 
+
+ saved energies -74.7692136 -74.6452914 -74.5382339 -73.5361343 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0316760 0.0676412 0.0885475 0.7280806 0.7489868 0.7849521 
+
+ saved energies -74.4911691 -74.3746870 -74.3155529 -74.1665659 -73.9354971 -72.7928265 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364044 0.0731098 0.0829505 0.7751114 0.7849521 0.8216574 
+
+ saved energies -74.4896715 -74.2630011 -74.0755812 -73.2519872 -72.5912314 -71.6859803 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0251438 0.0364044 0.0437117 0.0676412 0.0796542 0.0829505 0.0885475 0.7280806 0.7339487 0.7489868 0.7751114 0.7849521 0.7849521 0.8216574 0.8630821 0.9134405 
+
+ saved energies -74.4904203 -74.4279354 -74.3561626 -74.3463059 -74.2811745 -74.2110877 -74.1297614 -74.0485929 -74.0325522 -73.9208030 -73.9046073 -73.6648907 -73.5144379 -73.2374499 -72.8356667 -72.5947228 
+
+ >>> u+d contributions  -0.02516318102193248 
+
+ >>> uu+dd contributions  -0.05744916694341965 
+
+ >>> ud contributions  -0.14045389605497194 
+
+ >>> final result  -75.52615685545354 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005228 0.7590308 0.8611190 0.9066966 
+
+ saved energies -74.9162786 -74.6345127 -74.5469559 -74.2163304 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1027212 0.8331425 0.8611190 0.9066966 
+
+ saved energies -74.7628447 -74.6333290 -74.5439386 -73.2758793 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0315013 0.0696522 0.0878428 0.7258418 0.7440324 0.7821833 
+
+ saved energies -74.4884798 -74.3677364 -74.3183147 -74.0866803 -73.9150311 -72.6496510 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0368166 0.0696563 0.0803923 0.7714473 0.7821833 0.8150230 
+
+ saved energies -74.4869773 -74.2643821 -74.0857429 -73.2244142 -72.5818280 -71.6582217 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0291923 0.0368166 0.0414739 0.0696522 0.0782538 0.0803923 0.0878428 0.7258418 0.7283683 0.7440324 0.7714473 0.7821833 0.7821833 0.8150230 0.8622655 0.9067398 
+
+ saved energies -74.4877285 -74.4252436 -74.3402496 -74.2841173 -74.2115923 -74.0613290 -74.0518129 -74.0423658 -73.8844619 -73.8654935 -73.6602991 -73.5471067 -73.2100026 -73.0709749 -72.5899124 -72.5851598 
+
+ >>> u+d contributions  -0.0224612490507978 
+
+ >>> uu+dd contributions  -0.05458554136293985 
+
+ >>> ud contributions  -0.13714371302849157 
+
+ >>> final result  -75.52284667242705 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0929101 0.7679593 0.8593663 0.9081393 
+
+ saved energies -74.8798934 -74.6343987 -74.5505084 -74.4570499 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029321 0.8336257 0.8593663 0.9081393 
+
+ saved energies -74.7456522 -74.6334429 -74.5475682 -73.5103958 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0339043 0.0637946 0.0843549 0.7298325 0.7503928 0.7802832 
+
+ saved energies -74.4965251 -74.3629369 -74.3054217 -74.0673407 -73.8544002 -72.5505080 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0373582 0.0717485 0.0852594 0.7667723 0.7802832 0.8146735 
+
+ saved energies -74.4953300 -74.2742679 -74.0764775 -73.3822549 -72.6265403 -71.6457792 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0257912 0.0373582 0.0434585 0.0637946 0.0734936 0.0843549 0.0852594 0.7298325 0.7327686 0.7503928 0.7667723 0.7802832 0.7802832 0.8146735 0.8597995 0.9086938 
+
+ saved energies -74.4959276 -74.4334427 -74.3372215 -74.2715168 -74.2197583 -74.2128375 -74.0331636 -74.0331618 -73.9363977 -73.8256396 -73.6757664 -73.6174308 -73.5142209 -73.3650507 -73.0267861 -72.6294191 
+
+ >>> u+d contributions  -0.02323651580293337 
+
+ >>> uu+dd contributions  -0.05539888180071302 
+
+ >>> ud contributions  -0.1379901107159654 
+
+ >>> final result  -75.52369307011452 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0977299 0.7663323 0.8644903 0.9086115 
+
+ saved energies -74.8835784 -74.6382095 -74.5647616 -74.4372730 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1024977 0.8340728 0.8644903 0.9086115 
+
+ saved energies -74.7537367 -74.6373791 -74.5616729 -73.4706769 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0327258 0.0712388 0.0870307 0.7315512 0.7473432 0.7858562 
+
+ saved energies -74.4858624 -74.3509346 -74.3159894 -73.9685866 -73.9008439 -72.4421399 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0379764 0.0689799 0.0846569 0.7701792 0.7858562 0.8168597 
+
+ saved energies -74.4844971 -74.2740159 -74.0785809 -73.3560315 -72.5984869 -71.5978231 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0246708 0.0379764 0.0416185 0.0712388 0.0771275 0.0846569 0.0870307 0.7293213 0.7315512 0.7473432 0.7701792 0.7858562 0.7858562 0.8168597 0.8654284 0.9086519 
+
+ saved energies -74.4851798 -74.4226948 -74.3270124 -74.2893839 -74.2817402 -74.2178277 -74.0354644 -73.9962912 -73.9367342 -73.8707115 -73.7614627 -73.5814837 -73.5342005 -73.3383333 -72.7179690 -72.6015984 
+
+ >>> u+d contributions  -0.023293606034197452 
+
+ >>> uu+dd contributions  -0.05553914920341005 
+
+ >>> ud contributions  -0.13836215842115476 
+
+ >>> final result  -75.52406511781972 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0910876 0.7661689 0.8621938 0.9072864 
+
+ saved energies -74.8858770 -74.6306838 -74.6025868 -74.5468527 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1038455 0.8314048 0.8621938 0.9072864 
+
+ saved energies -74.7754894 -74.6297404 -74.5437219 -73.3775964 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0310150 0.0674136 0.0829354 0.7304329 0.7459547 0.7823534 
+
+ saved energies -74.4920781 -74.3614460 -74.3243770 -74.0386307 -73.9293550 -72.6590502 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0377185 0.0700119 0.0832197 0.7691456 0.7823534 0.8146467 
+
+ saved energies -74.4907781 -74.2752137 -74.0821165 -73.3689205 -72.5887517 -71.6447666 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0254183 0.0377185 0.0462170 0.0674136 0.0726298 0.0829354 0.0832197 0.7304329 0.7309036 0.7459547 0.7691456 0.7823534 0.7823534 0.8146467 0.8632327 0.9073838 
+
+ saved energies -74.4914281 -74.4289432 -74.3360620 -74.3360451 -74.2899047 -74.2202731 -74.0390834 -74.0106995 -74.0049360 -73.8983774 -73.8244545 -73.6590911 -73.5430103 -73.3513268 -72.5922172 -72.2992176 
+
+ >>> u+d contributions  -0.023936162167833196 
+
+ >>> uu+dd contributions  -0.05611175399372345 
+
+ >>> ud contributions  -0.1387565345326365 
+
+ >>> final result  -75.52445949393119 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0941376 0.7690289 0.8527207 0.9089862 
+
+ saved energies -74.8611235 -74.6629412 -74.5332242 -74.4061147 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1018711 0.8358007 0.8527207 0.9089862 
+
+ saved energies -74.7382597 -74.6618234 -74.5303703 -73.3867047 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0347627 0.0618716 0.0856246 0.7268122 0.7505651 0.7776740 
+
+ saved energies -74.5012064 -74.3723185 -74.3051732 -74.0941948 -73.8430352 -72.6157508 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0337869 0.0720154 0.0818079 0.7678815 0.7776740 0.8159025 
+
+ saved energies -74.4998840 -74.2721827 -74.0824192 -73.2499608 -72.6160478 -71.6964433 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0246229 0.0337869 0.0453437 0.0618716 0.0779314 0.0818079 0.0856246 0.7268122 0.7332558 0.7505651 0.7678815 0.7776740 0.7776740 0.8159025 0.8535279 0.9093893 
+
+ saved energies -74.5005452 -74.4380603 -74.3452406 -74.2714429 -74.2189599 -74.1515927 -74.0590471 -74.0387217 -73.9218827 -73.8143879 -73.7944348 -73.6225100 -73.4826839 -73.2363609 -72.6192904 -72.4781305 
+
+ >>> u+d contributions  -0.022647189272177813 
+
+ >>> uu+dd contributions  -0.054762700212740184 
+
+ >>> ud contributions  -0.13726940298584214 
+
+ >>> final result  -75.5229723623844 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0960187 0.7724112 0.8573847 0.9059918 
+
+ saved energies -74.8603203 -74.6546279 -74.5582003 -74.5081940 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1013228 0.8407472 0.8573847 0.9059918 
+
+ saved energies -74.7214143 -74.6536009 -74.5552817 -73.5912358 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364456 0.0651584 0.0850864 0.7308168 0.7507448 0.7794576 
+
+ saved energies -74.5003861 -74.3611626 -74.3098023 -74.1302944 -73.9444837 -72.8126999 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0356461 0.0732656 0.0816582 0.7710650 0.7794576 0.8170771 
+
+ saved energies -74.4990580 -74.2697545 -74.0849454 -73.4052928 -72.6739047 -71.8196158 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0240673 0.0356461 0.0520136 0.0651584 0.0816582 0.0850864 0.0851362 0.7308168 0.7364217 0.7507448 0.7710650 0.7794576 0.7794576 0.8170771 0.8582938 0.9061246 
+
+ saved energies -74.9630704 -74.4997221 -74.4372371 -74.3350667 -74.2758701 -74.2155821 -74.0949923 -74.0413529 -74.0031919 -73.9137342 -73.7083407 -73.5891515 -73.4939721 -73.3878048 -72.6757000 -72.5264780 
+
+ >>> u+d contributions  -0.02361089160750614 
+
+ >>> uu+dd contributions  -0.05582985169463424 
+
+ >>> ud contributions  -0.13863787027409313 
+
+ >>> final result  -75.52434082967265 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0952339 0.7625574 0.8603558 0.9081537 
+
+ saved energies -74.9127560 -74.6400122 -74.5434524 -74.3079921 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029136 0.8343914 0.8603558 0.9081537 
+
+ saved energies -74.7444914 -74.6390214 -74.5403203 -73.4424921 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0317892 0.0663005 0.0837764 0.7293740 0.7468499 0.7813613 
+
+ saved energies -74.4940384 -74.3571389 -74.3195846 -74.0270446 -73.9448847 -72.5872732 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0373059 0.0715460 0.0842427 0.7686645 0.7813613 0.8156014 
+
+ saved energies -74.4927475 -74.2682532 -74.0781644 -73.2673408 -72.6068130 -71.6168492 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0236425 0.0373059 0.0440384 0.0663005 0.0761380 0.0837764 0.0842427 0.7289772 0.7293740 0.7468499 0.7686645 0.7813613 0.7813613 0.8156014 0.8616376 0.9081850 
+
+ saved energies -74.5047357 -74.4933929 -74.4309080 -74.3314777 -74.2851487 -74.2138707 -74.0351650 -74.0120385 -73.9940682 -73.9138036 -73.6635460 -73.5730623 -73.3027353 -73.2524974 -72.7418563 -72.6098408 
+
+ >>> u+d contributions  -0.022491946614520936 
+
+ >>> uu+dd contributions  -0.054654466693915944 
+
+ >>> ud contributions  -0.13718821188935024 
+
+ >>> final result  -75.52289117128791 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946743 0.7654147 0.8617765 0.9057643 
+
+ saved energies -74.9033844 -74.6284728 -74.5454679 -74.3651507 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005981 0.8328296 0.8617765 0.9057643 
+
+ saved energies -74.7531308 -74.6274831 -74.5425840 -73.5178276 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0328498 0.0653182 0.0822912 0.7315237 0.7484967 0.7809651 
+
+ saved energies -74.4944683 -74.3601770 -74.3174640 -74.0865648 -73.9382763 -72.7487957 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0376870 0.0695191 0.0806772 0.7698070 0.7809651 0.8127972 
+
+ saved energies -74.4932063 -74.2718838 -74.0945286 -73.3975378 -72.6697353 -71.7418897 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0255120 0.0376870 0.0464276 0.0653182 0.0806772 0.0807323 0.0822912 0.7308955 0.7315237 0.7484967 0.7698070 0.7809651 0.7809651 0.8127972 0.8627342 0.9058478 
+
+ saved energies -74.4938373 -74.4313524 -74.3345896 -74.2835785 -74.2171332 -74.1577276 -74.0520580 -74.0506896 -73.9614217 -73.9073759 -73.6500876 -73.5560623 -73.4371417 -73.3797234 -72.7339527 -72.6712991 
+
+ >>> u+d contributions  -0.023142937442301025 
+
+ >>> uu+dd contributions  -0.05529035873008687 
+
+ >>> ud contributions  -0.13793370187845264 
+
+ >>> final result  -75.52363666127701 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0915477 0.7633763 0.8600270 0.9081185 
+
+ saved energies -74.8779241 -74.6526790 -74.5488450 -74.5312787 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1051413 0.8371460 0.8600270 0.9081185 
+
+ saved energies -74.7386225 -74.6513034 -74.5456942 -73.3654548 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0279383 0.0658867 0.0854124 0.7261224 0.7456480 0.7835964 
+
+ saved energies -74.4907936 -74.3739553 -74.3279135 -74.0896024 -73.9581853 -72.7128679 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0386929 0.0716200 0.0830392 0.7721772 0.7835964 0.8165235 
+
+ saved energies -74.4894017 -74.2558913 -74.0836443 -73.0926030 -72.6164019 -71.5700692 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0236412 0.0386929 0.0424189 0.0658867 0.0769403 0.0830392 0.0854124 0.7261224 0.7303454 0.7456480 0.7721772 0.7835964 0.7835964 0.8165235 0.8606055 0.9085563 
+
+ saved energies -74.4900976 -74.4276127 -74.3451279 -74.3407968 -74.2933419 -74.2046846 -74.0543847 -74.0405951 -73.9886523 -73.9263822 -73.8192164 -73.6542966 -73.4758886 -73.0821840 -72.6192087 -72.2881518 
+
+ >>> u+d contributions  -0.023230192974444338 
+
+ >>> uu+dd contributions  -0.055439104751928855 
+
+ >>> ud contributions  -0.1381765826414146 
+
+ >>> final result  -75.52387954203998 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0972420 0.7657515 0.8584120 0.9097479 
+
+ saved energies -74.9205217 -74.6557238 -74.5485918 -74.3080237 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029004 0.8393942 0.8584120 0.9097479 
+
+ saved energies -74.7267308 -74.6544735 -74.5456854 -73.5207845 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0339299 0.0642015 0.0866541 0.7289225 0.7513752 0.7816468 
+
+ saved energies -74.4943376 -74.3695164 -74.3049068 -74.1270219 -73.8723228 -72.6630570 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0377063 0.0735804 0.0833898 0.7718374 0.7816468 0.8175209 
+
+ saved energies -74.4930118 -74.2606362 -74.0796666 -73.2309261 -72.6343158 -71.6791403 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0247897 0.0377063 0.0450323 0.0642015 0.0815181 0.0833898 0.0866541 0.7289225 0.7318113 0.7513752 0.7718374 0.7816468 0.7816468 0.8175209 0.8591118 0.9101135 
+
+ saved energies -74.4936747 -74.4311898 -74.3415075 -74.2710756 -74.2084593 -74.0912122 -74.0778926 -74.0361165 -73.9701205 -73.8430228 -73.7217307 -73.5453878 -73.4433001 -73.2173856 -72.9645160 -72.6368465 
+
+ >>> u+d contributions  -0.022842518787010546 
+
+ >>> uu+dd contributions  -0.0550374758917571 
+
+ >>> ud contributions  -0.13783004722381975 
+
+ >>> final result  -75.52353300662237 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946862 0.7646730 0.8608174 0.9065196 
+
+ saved energies -74.8820714 -74.6329820 -74.5499584 -74.4841035 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1010058 0.8358738 0.8608174 0.9065196 
+
+ saved energies -74.7314916 -74.6318989 -74.5469341 -73.5463869 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0317741 0.0669735 0.0854002 0.7279479 0.7463746 0.7815740 
+
+ saved energies -74.4904418 -74.3634636 -74.3173861 -74.0595184 -73.9201545 -72.6492954 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0377828 0.0705344 0.0829670 0.7691413 0.7815740 0.8143255 
+
+ saved energies -74.4890945 -74.2674383 -74.0838379 -73.2799973 -72.6266800 -71.6545854 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0240321 0.0377828 0.0449661 0.0669735 0.0779505 0.0829670 0.0854002 0.7279479 0.7307204 0.7463746 0.7691413 0.7815740 0.7815740 0.8143255 0.8615908 0.9068114 
+
+ saved energies -74.5276752 -74.4897681 -74.4272832 -74.3368272 -74.2831650 -74.2138666 -74.0405180 -74.0252343 -73.9962334 -73.8894757 -73.6577833 -73.5902673 -73.5234921 -73.2646338 -72.7251903 -72.6291824 
+
+ >>> u+d contributions  -0.023652387827757332 
+
+ >>> uu+dd contributions  -0.05577247018878026 
+
+ >>> ud contributions  -0.1383554398512095 
+
+ >>> final result  -75.52405839924977 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0963599 0.7608583 0.8558400 0.9096134 
+
+ saved energies -74.9010279 -74.6479613 -74.5329248 -74.2746011 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0992228 0.8343643 0.8558400 0.9096134 
+
+ saved energies -74.7384450 -74.6466084 -74.5301268 -73.3563496 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0303113 0.0633288 0.0883925 0.7229433 0.7480069 0.7810244 
+
+ saved energies -74.4912405 -74.3810171 -74.3031709 -74.1770332 -73.8483656 -72.5640267 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0348659 0.0684958 0.0804462 0.7690740 0.7810244 0.8146544 
+
+ saved energies -74.4898052 -74.2656071 -74.0870873 -73.1612618 -72.6108980 -71.6030156 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0238158 0.0348659 0.0413308 0.0633288 0.0764826 0.0804462 0.0883925 0.7229433 0.7289702 0.7480069 0.7690740 0.7810244 0.7810244 0.8146544 0.8566850 0.9097280 
+
+ saved energies -74.4905229 -74.4280379 -74.3523020 -74.2696289 -74.2139767 -74.1398091 -74.0432026 -74.0301880 -73.8954437 -73.8196032 -73.6845453 -73.5364081 -73.3673360 -73.1488135 -72.6137440 -72.5565437 
+
+ >>> u+d contributions  -0.022413427088657487 
+
+ >>> uu+dd contributions  -0.054471658993083205 
+
+ >>> ud contributions  -0.13678209263907315 
+
+ >>> final result  -75.52248505203762 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0972073 0.7620374 0.8630546 0.9120280 
+
+ saved energies -74.9220239 -74.6426622 -74.5730912 -74.5353368 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0985849 0.8397205 0.8630546 0.9120280 
+
+ saved energies -74.7513882 -74.6413027 -74.5323839 -73.6442947 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0354352 0.0684399 0.0895760 0.7275876 0.7487238 0.7817285 
+
+ saved energies -74.4988015 -74.3618024 -74.3092117 -74.0412881 -73.8910178 -72.4862306 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0367450 0.0749655 0.0803580 0.7763360 0.7817285 0.8199489 
+
+ saved energies -74.4972748 -74.2453948 -74.0805032 -72.9774188 -72.5855311 -71.6190476 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0231865 0.0367450 0.0393295 0.0684399 0.0786954 0.0803580 0.0895760 0.7275876 0.7299660 0.7487238 0.7763360 0.7817285 0.7817285 0.8199489 0.8640500 0.9122652 
+
+ saved energies -74.6350517 -74.4980382 -74.4355532 -74.3331812 -74.2752454 -74.1943560 -74.0382362 -74.0371370 -74.0080819 -73.8674363 -73.8615033 -73.6655381 -73.5303000 -73.1224946 -72.9708233 -72.5894970 
+
+ >>> u+d contributions  -0.024256999126175866 
+
+ >>> uu+dd contributions  -0.056528487540065134 
+
+ >>> ud contributions  -0.13938465161817096 
+
+ >>> final result  -75.52508761101673 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0984907 0.7661035 0.8614188 0.9095354 
+
+ saved energies -74.9050300 -74.6560826 -74.5479055 -74.3820126 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1023210 0.8375486 0.8614188 0.9095354 
+
+ saved energies -74.7443634 -74.6549893 -74.5449903 -73.5437330 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0340993 0.0681618 0.0862305 0.7315438 0.7496124 0.7836749 
+
+ saved energies -74.4932405 -74.3615823 -74.3149563 -74.0767959 -73.9226952 -72.7143857 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0390367 0.0717370 0.0823914 0.7730206 0.7836749 0.8163752 
+
+ saved energies -74.4919028 -74.2644478 -74.0883390 -73.3167534 -72.6622453 -71.7290113 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0264847 0.0390367 0.0471784 0.0681618 0.0810356 0.0823914 0.0862305 0.7315438 0.7322772 0.7496124 0.7730206 0.7836749 0.7836749 0.8163752 0.8624221 0.9096981 
+
+ saved energies -74.4925716 -74.4300867 -74.3348071 -74.2809608 -74.2753442 -74.2110730 -74.0447877 -74.0423727 -73.9815396 -73.8921465 -73.8053687 -73.6506979 -73.4728194 -73.3008457 -72.6888699 -72.6639849 
+
+ >>> u+d contributions  -0.023097888108202184 
+
+ >>> uu+dd contributions  -0.055379271661624534 
+
+ >>> ud contributions  -0.13836016878428223 
+
+ >>> final result  -75.52406312818285 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0939224 0.7644465 0.8577443 0.9091164 
+
+ saved energies -74.8913611 -74.6517351 -74.5493812 -74.3288543 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1021409 0.8352385 0.8577443 0.9091164 
+
+ saved energies -74.7450420 -74.6505557 -74.5464066 -73.3577356 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0299282 0.0635648 0.0855804 0.7270344 0.7490500 0.7826866 
+
+ saved energies -74.4951816 -74.3771364 -74.3133137 -74.1654378 -73.9033768 -72.6516360 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0356651 0.0694334 0.0827132 0.7694069 0.7826866 0.8164549 
+
+ saved energies -74.4938470 -74.2707531 -74.0809054 -73.3459080 -72.6344977 -71.6179734 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0257743 0.0356651 0.0431666 0.0635648 0.0751803 0.0827132 0.0855804 0.7270344 0.7311896 0.7490500 0.7694069 0.7826866 0.7826866 0.8164549 0.8585047 0.9094577 
+
+ saved energies -74.4945143 -74.4320294 -74.3492224 -74.2792358 -74.2185656 -74.1442115 -74.1285808 -74.0376718 -73.9734662 -73.8733141 -73.7056760 -73.5381173 -73.3300154 -72.9339157 -72.7186360 -72.6373121 
+
+ >>> u+d contributions  -0.022188593342136367 
+
+ >>> uu+dd contributions  -0.05437980910601788 
+
+ >>> ud contributions  -0.13705603047765313 
+
+ >>> final result  -75.52275898987621 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0953952 0.7641113 0.8612195 0.9067863 
+
+ saved energies -74.9026393 -74.6401847 -74.5518381 -74.2752394 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1008844 0.8357895 0.8612195 0.9067863 
+
+ saved energies -74.7277773 -74.6392011 -74.5487902 -73.5203011 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0322075 0.0662596 0.0832649 0.7304913 0.7474965 0.7815487 
+
+ saved energies -74.4935510 -74.3530015 -74.3164520 -73.9723010 -73.9016204 -72.4368271 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0378410 0.0707911 0.0831935 0.7691464 0.7815487 0.8144988 
+
+ saved energies -74.4922689 -74.2640672 -74.0803577 -73.2280753 -72.6047054 -71.5652333 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0231393 0.0378410 0.0404270 0.0662596 0.0748865 0.0831935 0.0832649 0.7293811 0.7304913 0.7474965 0.7691464 0.7815487 0.7815487 0.8144988 0.8622698 0.9069225 
+
+ saved energies -74.4929100 -74.4304251 -74.3273736 -74.2822312 -74.2097968 -74.0777491 -74.0372054 -73.9403213 -73.8714273 -73.8566184 -73.6232578 -73.5635366 -73.5017478 -73.2146262 -73.1366253 -72.6080056 
+
+ >>> u+d contributions  -0.02235330470488653 
+
+ >>> uu+dd contributions  -0.0544712379579829 
+
+ >>> ud contributions  -0.13694710071495012 
+
+ >>> final result  -75.5226500601135 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0943301 0.7641623 0.8613733 0.9057966 
+
+ saved energies -74.8964269 -74.6243605 -74.5476323 -74.4725088 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1061432 0.8339921 0.8613733 0.9057966 
+
+ saved energies -74.7428025 -74.6232385 -74.5445900 -73.5553845 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0332914 0.0657911 0.0842723 0.7285588 0.7470400 0.7795398 
+
+ saved energies -74.4933993 -74.3609602 -74.3184627 -74.0653204 -73.9453875 -72.7883903 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0407137 0.0741128 0.0856554 0.7679972 0.7795398 0.8129389 
+
+ saved energies -74.4921654 -74.2612454 -74.0821766 -73.3022988 -72.6877865 -71.7141510 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0276800 0.0407137 0.0480338 0.0657911 0.0776191 0.0842723 0.0856554 0.7285588 0.7306582 0.7470400 0.7679972 0.7795398 0.7795398 0.8129389 0.8623794 0.9059399 
+
+ saved energies -74.4927824 -74.4302974 -74.3339084 -74.2841532 -74.2082731 -74.1419606 -74.0390109 -74.0309894 -73.9936431 -73.9140507 -73.7387550 -73.6155414 -73.5136784 -73.2871543 -72.8664560 -72.6890101 
+
+ >>> u+d contributions  -0.02393242100319451 
+
+ >>> uu+dd contributions  -0.05604966130413329 
+
+ >>> ud contributions  -0.1386159530759128 
+
+ >>> final result  -75.52431891247447 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0944954 0.7649205 0.8618893 0.9068122 
+
+ saved energies -74.8939330 -74.6348257 -74.5490644 -74.3997682 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1059232 0.8307395 0.8618893 0.9068122 
+
+ saved energies -74.7674800 -74.6337710 -74.5461037 -73.3853407 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0316213 0.0663437 0.0842476 0.7298111 0.7477150 0.7824374 
+
+ saved energies -74.4915667 -74.3634392 -74.3220148 -74.0618753 -73.9445744 -72.7493815 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0395041 0.0702447 0.0836696 0.7690125 0.7824374 0.8131780 
+
+ saved energies -74.4903114 -74.2676351 -74.0902597 -73.3376122 -72.6922624 -71.6987618 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0277645 0.0395041 0.0480299 0.0663437 0.0763399 0.0836696 0.0842476 0.7295971 0.7298111 0.7477150 0.7690125 0.7824374 0.7824374 0.8131780 0.8629190 0.9068625 
+
+ saved energies -74.4909391 -74.4284542 -74.3368134 -74.2877975 -74.2141170 -74.1364958 -74.0468372 -74.0276190 -73.9599085 -73.9131831 -73.6841509 -73.5847063 -73.3719562 -73.3214169 -72.6932473 -72.5662316 
+
+ >>> u+d contributions  -0.02307180692360405 
+
+ >>> uu+dd contributions  -0.055249460615012014 
+
+ >>> ud contributions  -0.13787055528774078 
+
+ >>> final result  -75.5235735146863 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0954496 0.7675548 0.8588714 0.9090353 
+
+ saved energies -74.8887848 -74.6508150 -74.5529592 -74.3750424 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1038155 0.8367729 0.8588714 0.9090353 
+
+ saved energies -74.7644235 -74.6495277 -74.5500923 -73.3059646 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0347018 0.0636559 0.0864435 0.7290120 0.7517996 0.7807538 
+
+ saved energies -74.4997367 -74.3740657 -74.3038852 -74.1255690 -73.8308171 -72.5913340 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0354501 0.0734937 0.0804280 0.7738195 0.7807538 0.8187974 
+
+ saved energies -74.4983423 -74.2610592 -74.0809477 -73.1632161 -72.5710748 -71.6685386 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0266691 0.0354501 0.0440416 0.0636559 0.0760225 0.0804280 0.0864435 0.7290120 0.7335644 0.7517996 0.7738195 0.7807538 0.7807538 0.8187974 0.8595005 0.9092968 
+
+ saved energies -74.4990395 -74.4365545 -74.3456399 -74.2701946 -74.2092870 -74.0918764 -74.0897801 -74.0373213 -73.9674969 -73.8026229 -73.7186598 -73.5666656 -73.3548161 -73.1516734 -72.5753952 -72.5061036 
+
+ >>> u+d contributions  -0.02249598740620296 
+
+ >>> uu+dd contributions  -0.054705873491605626 
+
+ >>> ud contributions  -0.13755581060989497 
+
+ >>> final result  -75.52325877000845 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0968316 0.7643771 0.8574539 0.9083571 
+
+ saved energies -74.8871852 -74.6552449 -74.5501386 -74.3207175 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1016793 0.8388285 0.8574539 0.9083571 
+
+ saved energies -74.7257920 -74.6541823 -74.5469740 -73.4437786 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0321135 0.0662170 0.0851537 0.7283562 0.7472929 0.7813964 
+
+ saved energies -74.4941634 -74.3630531 -74.3130496 -74.1142656 -73.9337363 -72.6245188 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0346625 0.0717630 0.0826366 0.7705228 0.7813964 0.8184969 
+
+ saved energies -74.4927496 -74.2693836 -74.0709458 -73.3467629 -72.5688535 -71.6396010 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0222504 0.0346625 0.0439341 0.0662170 0.0826366 0.0836086 0.0851537 0.7283562 0.7288799 0.7472929 0.7705228 0.7813964 0.7813964 0.8184969 0.8581103 0.9083878 
+
+ saved energies -74.4934565 -74.4309716 -74.3367417 -74.3335891 -74.2786877 -74.2154562 -74.0792524 -74.0280595 -73.9894112 -73.9031466 -73.7016300 -73.5764421 -73.3304018 -73.3284822 -72.6024608 -72.5731737 
+
+ >>> u+d contributions  -0.0226408830052777 
+
+ >>> uu+dd contributions  -0.05478220035461895 
+
+ >>> ud contributions  -0.13739013826683755 
+
+ >>> final result  -75.5230930976654 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0956466 0.7692390 0.8585713 0.9060447 
+
+ saved energies -74.8596310 -74.6419551 -74.5579118 -74.4034772 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1014155 0.8343682 0.8585713 0.9060447 
+
+ saved energies -74.7416616 -74.6409969 -74.5550230 -73.3881994 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0345687 0.0653579 0.0858517 0.7288991 0.7493929 0.7801821 
+
+ saved energies -74.4951374 -74.3554261 -74.3049200 -74.0171497 -73.8733426 -72.4533391 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0349824 0.0700177 0.0820179 0.7681819 0.7801821 0.8152175 
+
+ saved energies -74.4938004 -74.2688970 -74.0820532 -73.2810049 -72.6295343 -71.6342247 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0226585 0.0349824 0.0457820 0.0653579 0.0762722 0.0820179 0.0858517 0.7288991 0.7303845 0.7493929 0.7681819 0.7801821 0.7801821 0.8152175 0.8588385 0.9066872 
+
+ saved energies -74.4944689 -74.4319840 -74.3300793 -74.2711551 -74.2142135 -74.0384586 -73.9957483 -73.9842432 -73.9407554 -73.8440580 -73.8177344 -73.6837199 -73.5221841 -73.2663412 -72.6322746 -72.4878241 
+
+ >>> u+d contributions  -0.02266075921789746 
+
+ >>> uu+dd contributions  -0.054755051553785204 
+
+ >>> ud contributions  -0.1372650375271466 
+
+ >>> final result  -75.5229679969257 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0948887 0.7636226 0.8582021 0.9083950 
+
+ saved energies -74.8997201 -74.6444488 -74.5402749 -74.2760634 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0974804 0.8329962 0.8582021 0.9083950 
+
+ saved energies -74.7458257 -74.6432639 -74.5375986 -73.4578202 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0319919 0.0625964 0.0851074 0.7274468 0.7499578 0.7805623 
+
+ saved energies -74.4999564 -74.3703402 -74.2992781 -74.1377583 -73.8299961 -72.3842164 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0356607 0.0679746 0.0790880 0.7694489 0.7805623 0.8128762 
+
+ saved energies -74.4986562 -74.2650846 -74.0896916 -73.2545567 -72.6256048 -71.5655282 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0209560 0.0356607 0.0411245 0.0625964 0.0756952 0.0790880 0.0851074 0.7265364 0.7274468 0.7499578 0.7694489 0.7805623 0.7805623 0.8128762 0.8591909 0.9085114 
+
+ saved energies -74.4993063 -74.4368214 -74.3426195 -74.2660547 -74.2128307 -74.1020712 -74.0457168 -74.0282378 -73.9079422 -73.8022164 -73.6786738 -73.5214635 -73.2913932 -73.2411707 -72.9595667 -72.6287890 
+
+ >>> u+d contributions  -0.02183190836922581 
+
+ >>> uu+dd contributions  -0.053974375691300126 
+
+ >>> ud contributions  -0.13637018913590265 
+
+ >>> final result  -75.52207314853446 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0912747 0.7635525 0.8633654 0.9085945 
+
+ saved energies -74.9070900 -74.6614260 -74.6257163 -74.5418784 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1072611 0.8371015 0.8633654 0.9085945 
+
+ saved energies -74.7373760 -74.6245451 -74.5385878 -73.6401418 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0324693 0.0672310 0.0835384 0.7298551 0.7461626 0.7809242 
+
+ saved energies -74.4887479 -74.3578641 -74.3198705 -74.0250549 -73.9239070 -72.7239788 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0425032 0.0772370 0.0880720 0.7700893 0.7809242 0.8156581 
+
+ saved energies -74.4875008 -74.2563398 -74.0677058 -73.2181084 -72.5863055 -71.6273961 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0258420 0.0425032 0.0434439 0.0672310 0.0762847 0.0835384 0.0880720 0.7298551 0.7309788 0.7461626 0.7700893 0.7809242 0.7809242 0.8156581 0.8642674 0.9086186 
+
+ saved energies -74.5195046 -74.4881243 -74.4256394 -74.3307071 -74.2851713 -74.2034519 -74.0275313 -74.0250599 -73.9915433 -73.9853499 -73.8929273 -73.6279696 -73.5216663 -73.2043937 -73.0374926 -72.5897102 
+
+ >>> u+d contributions  -0.02548538325228295 
+
+ >>> uu+dd contributions  -0.05761046342348088 
+
+ >>> ud contributions  -0.14021450329852211 
+
+ >>> final result  -75.52591746269708 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0913718 0.7685224 0.8604651 0.9069056 
+
+ saved energies -74.8817777 -74.6531950 -74.5610858 -74.4322763 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1044086 0.8374902 0.8604651 0.9069056 
+
+ saved energies -74.7466840 -74.6521962 -74.5578809 -73.3609857 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0308123 0.0639266 0.0811320 0.7325005 0.7497059 0.7828202 
+
+ saved energies -74.4977308 -74.3570996 -74.3302535 -74.0461986 -74.0379101 -72.7592594 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0358494 0.0718146 0.0833316 0.7713032 0.7828202 0.8187854 
+
+ saved energies -74.4964616 -74.2662089 -74.0812315 -73.2817273 -72.6617753 -71.6623866 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0253740 0.0358494 0.0463013 0.0639266 0.0766129 0.0811320 0.0833316 0.7325005 0.7339993 0.7497059 0.7713032 0.7828202 0.7828202 0.8187854 0.8611047 0.9071767 
+
+ saved energies -74.4970962 -74.4346113 -74.3311920 -74.2954853 -74.2121549 -74.1162609 -74.0389356 -74.0129484 -74.0040517 -73.9455007 -73.7082213 -73.5384545 -73.2674759 -73.0994626 -72.7296599 -72.6639135 
+
+ >>> u+d contributions  -0.02263925197839724 
+
+ >>> uu+dd contributions  -0.05486697786033667 
+
+ >>> ud contributions  -0.13761482556721494 
+
+ >>> final result  -75.52331778496577 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0953615 0.7591873 0.8611896 0.9067483 
+
+ saved energies -74.9256672 -74.6344871 -74.5457213 -74.2406807 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1016695 0.8350408 0.8611896 0.9067483 
+
+ saved energies -74.7314520 -74.6333142 -74.5426363 -73.4797513 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0289856 0.0658382 0.0833263 0.7279170 0.7454051 0.7822577 
+
+ saved energies -74.4918556 -74.3685549 -74.3240679 -74.1004800 -73.9475966 -72.7007737 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0386923 0.0700664 0.0826110 0.7697131 0.7822577 0.8136318 
+
+ saved energies -74.4905394 -74.2644127 -74.0836975 -73.3109458 -72.6363064 -71.6117997 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0251805 0.0386923 0.0417946 0.0658382 0.0778167 0.0826110 0.0833263 0.7279170 0.7283908 0.7454051 0.7697131 0.7822577 0.7822577 0.8136318 0.8620920 0.9068075 
+
+ saved energies -74.4911975 -74.4287126 -74.3410079 -74.2896592 -74.2118083 -74.0650373 -74.0406108 -74.0216248 -73.9160886 -73.8899807 -73.7071166 -73.5665252 -73.3727029 -73.2957137 -72.6904458 -72.6389483 
+
+ >>> u+d contributions  -0.022231052405049235 
+
+ >>> uu+dd contributions  -0.05438344564389307 
+
+ >>> ud contributions  -0.13693787277650296 
+
+ >>> final result  -75.52264083217506 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0963986 0.7605979 0.8534822 0.9051951 
+
+ saved energies -74.9068569 -74.6485227 -74.5271707 -74.0577574 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1024259 0.8323323 0.8534822 0.9051951 
+
+ saved energies -74.7455684 -74.6475007 -74.5240480 -73.1879560 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0323719 0.0634437 0.0822881 0.7255488 0.7443932 0.7754650 
+
+ saved energies -74.5002376 -74.3580547 -74.3217313 -73.9713051 -73.9345402 -72.5129608 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0326788 0.0712528 0.0804266 0.7662911 0.7754650 0.8140390 
+
+ saved energies -74.4988580 -74.2669606 -74.0804892 -73.0847023 -72.5633930 -71.5986084 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0254172 0.0326788 0.0405800 0.0634437 0.0760363 0.0804266 0.0822881 0.7255488 0.7273906 0.7443932 0.7662911 0.7754650 0.7754650 0.8140390 0.8538250 0.9056791 
+
+ saved energies -74.4995478 -74.4370629 -74.3321810 -74.2872755 -74.2128664 -74.1982036 -74.0373735 -73.9394257 -73.9035891 -73.8079669 -73.6826705 -73.4939933 -73.0748298 -72.7853187 -72.5678030 -72.4712998 
+
+ >>> u+d contributions  -0.021293485305630234 
+
+ >>> uu+dd contributions  -0.053241445686990664 
+
+ >>> ud contributions  -0.13530667487348783 
+
+ >>> final result  -75.52100963427205 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0947322 0.7655392 0.8606046 0.9096680 
+
+ saved energies -74.8981087 -74.6449251 -74.5449741 -74.5197849 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1006513 0.8360792 0.8606046 0.9096680 
+
+ saved energies -74.7540921 -74.6438117 -74.5419767 -73.4967945 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0325935 0.0669415 0.0863217 0.7289502 0.7483305 0.7826785 
+
+ saved energies -74.4956232 -74.3684539 -74.3155884 -74.1136295 -73.9197325 -72.6812097 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0361093 0.0708231 0.0816433 0.7718582 0.7826785 0.8173923 
+
+ saved energies -74.4942179 -74.2686402 -74.0827828 -73.3439331 -72.6235248 -71.6852681 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0253446 0.0361093 0.0444428 0.0669415 0.0776215 0.0816433 0.0863217 0.7289502 0.7328826 0.7483305 0.7718582 0.7826785 0.7826785 0.8173923 0.8614317 0.9098832 
+
+ saved energies -74.4949205 -74.4324356 -74.3413158 -74.2814540 -74.2156106 -74.1852395 -74.0782578 -74.0395258 -73.9902571 -73.8892983 -73.7574459 -73.5896346 -73.5100798 -73.3279139 -72.8214172 -72.6265656 
+
+ >>> u+d contributions  -0.023630445913077336 
+
+ >>> uu+dd contributions  -0.05586626031446563 
+
+ >>> ud contributions  -0.13865993197149162 
+
+ >>> final result  -75.52436289137005 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0962943 0.7662611 0.8580362 0.9073125 
+
+ saved energies -74.8962820 -74.6411173 -74.5493733 -74.2344534 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1034750 0.8327222 0.8580362 0.9073125 
+
+ saved energies -74.7588493 -74.6401421 -74.5464577 -73.3190025 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0353814 0.0635720 0.0842672 0.7296848 0.7503800 0.7785706 
+
+ saved energies -74.4995153 -74.3582190 -74.3037277 -73.9967774 -73.8253991 -72.4102583 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0352306 0.0722023 0.0826731 0.7680998 0.7785706 0.8155423 
+
+ saved energies -74.4982406 -74.2677112 -74.0760189 -73.2369218 -72.5832987 -71.6105864 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0246896 0.0352306 0.0428846 0.0635720 0.0740791 0.0826731 0.0842672 0.7292185 0.7296848 0.7503800 0.7680998 0.7785706 0.7785706 0.8155423 0.8585777 0.9077086 
+
+ saved energies -74.4988779 -74.4363930 -74.3323813 -74.2699057 -74.2135152 -74.0326408 -74.0200032 -73.9641857 -73.9061441 -73.7972108 -73.7019246 -73.5350418 -73.3009951 -73.2236422 -72.5873801 -72.5526550 
+
+ >>> u+d contributions  -0.021880911986144627 
+
+ >>> uu+dd contributions  -0.05397086399556496 
+
+ >>> ud contributions  -0.13639267968477006 
+
+ >>> final result  -75.52209563908333 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0926531 0.7674313 0.8601120 0.9118195 
+
+ saved energies -74.8978119 -74.6581168 -74.5415242 -74.5407968 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1016541 0.8363013 0.8601120 0.9118195 
+
+ saved energies -74.7573348 -74.6570534 -74.5377680 -73.4781778 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0314642 0.0657064 0.0849525 0.7310555 0.7503016 0.7845438 
+
+ saved energies -74.4918273 -74.3623896 -74.3140267 -74.1092619 -73.9375432 -72.6411321 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0367451 0.0703996 0.0833070 0.7716364 0.7845438 0.8181984 
+
+ saved energies -74.4904972 -74.2673541 -74.0790752 -73.3851907 -72.6486771 -71.6438518 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0225741 0.0367451 0.0449144 0.0657064 0.0787467 0.0833070 0.0849525 0.7310555 0.7313458 0.7503016 0.7716364 0.7845438 0.7845438 0.8181984 0.8604064 0.9127295 
+
+ saved energies -74.4911622 -74.4286773 -74.3359095 -74.2957729 -74.2798424 -74.2136977 -74.0741523 -74.0358862 -73.9957176 -73.9065870 -73.7598671 -73.6937993 -73.4838272 -73.3683330 -72.6510248 -72.6506061 
+
+ >>> u+d contributions  -0.02375164325746346 
+
+ >>> uu+dd contributions  -0.055981402524764474 
+
+ >>> ud contributions  -0.13886548578498076 
+
+ >>> final result  -75.52456844518353 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0951173 0.7662586 0.8570370 0.9098910 
+
+ saved energies -74.8958795 -74.6537531 -74.5332783 -74.3278982 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1034479 0.8345393 0.8570370 0.9098910 
+
+ saved energies -74.7420030 -74.6527896 -74.5302803 -73.4737372 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0340079 0.0649055 0.0838711 0.7302808 0.7492464 0.7801440 
+
+ saved energies -74.4945383 -74.3612865 -74.3092172 -74.0518836 -73.8614687 -72.5929630 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0375125 0.0723135 0.0846087 0.7678489 0.7801440 0.8149450 
+
+ saved energies -74.4933033 -74.2722952 -74.0753676 -73.3654616 -72.5991576 -71.6634733 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0267422 0.0375125 0.0431554 0.0649055 0.0753335 0.0838711 0.0846087 0.7302808 0.7322325 0.7492464 0.7678489 0.7801440 0.7801440 0.8149450 0.8584150 0.9099905 
+
+ saved energies -74.4939208 -74.4314359 -74.3355906 -74.2751525 -74.2177067 -74.0321468 -74.0179088 -73.9999075 -73.9154799 -73.8322867 -73.6850035 -73.5526883 -73.3482761 -73.3404729 -73.1127150 -72.6025005 
+
+ >>> u+d contributions  -0.022802768834407714 
+
+ >>> uu+dd contributions  -0.05493213163829938 
+
+ >>> ud contributions  -0.13749436787023847 
+
+ >>> final result  -75.52319732726879 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0942015 0.7645783 0.8560436 0.9106365 
+
+ saved energies -74.8654894 -74.6551339 -74.5425364 -74.4815535 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1051157 0.8333719 0.8560436 0.9106365 
+
+ saved energies -74.7486894 -74.6538359 -74.5396026 -73.3071610 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0293210 0.0648654 0.0897363 0.7229936 0.7478646 0.7834089 
+
+ saved energies -74.4867845 -74.3838374 -74.3077424 -74.1692067 -73.8622364 -72.6606057 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0367689 0.0691749 0.0847194 0.7678644 0.7834089 0.8158149 
+
+ saved energies -74.4853958 -74.2729616 -74.0825634 -73.2369988 -72.6232580 -71.6111788 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0260030 0.0367689 0.0445487 0.0648654 0.0757171 0.0847194 0.0897363 0.7229936 0.7293473 0.7478646 0.7678644 0.7834089 0.7834089 0.8158149 0.8571328 0.9106910 
+
+ saved energies -74.4860901 -74.4236052 -74.3555500 -74.2738761 -74.2207481 -74.1320261 -74.0717445 -74.0389777 -74.0004064 -73.8329755 -73.6971270 -73.6899185 -73.4878780 -73.2220730 -72.6255266 -72.2235350 
+
+ >>> u+d contributions  -0.023213589189106244 
+
+ >>> uu+dd contributions  -0.05538642075364918 
+
+ >>> ud contributions  -0.13803756407938564 
+
+ >>> final result  -75.52374052347794 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0982530 0.7630029 0.8646904 0.9081659 
+
+ saved energies -74.9146449 -74.6289017 -74.5546176 -74.2577013 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1017276 0.8305240 0.8646904 0.9081659 
+
+ saved energies -74.7618948 -74.6278790 -74.5518462 -73.4472864 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0325179 0.0677758 0.0868305 0.7302256 0.7492803 0.7845382 
+
+ saved energies -74.4882399 -74.3571634 -74.3086805 -73.9900720 -73.8565154 -72.3959764 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0395866 0.0680157 0.0827867 0.7697673 0.7845382 0.8129674 
+
+ saved energies -74.4869641 -74.2651209 -74.0928130 -73.2156846 -72.6569193 -71.5820194 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0259912 0.0395866 0.0414020 0.0677758 0.0737495 0.0827867 0.0868305 0.7266149 0.7302256 0.7492803 0.7697673 0.7845382 0.7845382 0.8129674 0.8655957 0.9085085 
+
+ saved energies -74.4876020 -74.4251171 -74.3311184 -74.2751137 -74.2111844 -74.0488730 -74.0381553 -73.9575634 -73.9005224 -73.8274778 -73.6475420 -73.5212955 -73.2957265 -73.2015146 -72.9728442 -72.6583891 
+
+ >>> u+d contributions  -0.022286723963810838 
+
+ >>> uu+dd contributions  -0.05449540162564665 
+
+ >>> ud contributions  -0.13726782838928148 
+
+ >>> final result  -75.52297078778784 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946524 0.7617265 0.8623081 0.9105019 
+
+ saved energies -74.9154532 -74.6311466 -74.5462045 -74.5229386 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1022607 0.8364418 0.8623081 0.9105019 
+
+ saved energies -74.7458900 -74.6299301 -74.5430890 -73.5299048 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0309859 0.0667018 0.0882229 0.7263716 0.7478927 0.7836085 
+
+ saved energies -74.4874887 -74.3668309 -74.3168390 -74.0587667 -73.9343925 -72.6369877 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0373208 0.0721477 0.0852790 0.7704772 0.7836085 0.8184354 
+
+ saved energies -74.4860818 -74.2605667 -74.0766631 -73.1316190 -72.6279273 -71.6134664 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0238382 0.0373208 0.0435242 0.0667018 0.0767158 0.0852790 0.0882229 0.7263716 0.7296555 0.7478927 0.7704772 0.7836085 0.7836085 0.8184354 0.8631371 0.9105952 
+
+ saved energies -74.4867853 -74.4243004 -74.3391147 -74.3027528 -74.2824116 -74.2082463 -74.0335838 -74.0244883 -73.9920972 -73.9033058 -73.8738458 -73.6367868 -73.5298278 -73.1195753 -72.7750937 -72.6301881 
+
+ >>> u+d contributions  -0.024190999890342686 
+
+ >>> uu+dd contributions  -0.056348632758198736 
+
+ >>> ud contributions  -0.1390087070433397 
+
+ >>> final result  -75.5247116664419 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0921331 0.7615449 0.8655568 0.9096558 
+
+ saved energies -74.9178821 -74.6228648 -74.5482489 -74.5064189 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005645 0.8336507 0.8655568 0.9096558 
+
+ saved energies -74.7560010 -74.6217219 -74.5452196 -73.5721521 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0295450 0.0662468 0.0847273 0.7297180 0.7481985 0.7849003 
+
+ saved energies -74.4897948 -74.3630531 -74.3184989 -74.0570986 -73.9265131 -72.5485099 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0391051 0.0698136 0.0837078 0.7710062 0.7849003 0.8156088 
+
+ saved energies -74.4884928 -74.2624287 -74.0839315 -73.2386713 -72.6392237 -71.5633584 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0231578 0.0391051 0.0406128 0.0662468 0.0737244 0.0837078 0.0847273 0.7285683 0.7297180 0.7481985 0.7710062 0.7849003 0.7849003 0.8156088 0.8665857 0.9098745 
+
+ saved energies -74.4891438 -74.4266589 -74.3359394 -74.2842781 -74.2095450 -74.1430505 -74.0407024 -74.0229161 -74.0218921 -73.8956672 -73.6796884 -73.5876169 -73.5276533 -73.2247228 -73.1511452 -72.6415068 
+
+ >>> u+d contributions  -0.023634943373344906 
+
+ >>> uu+dd contributions  -0.055845643176144814 
+
+ >>> ud contributions  -0.13855661944019979 
+
+ >>> final result  -75.52425957883875 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0908661 0.7646110 0.8637501 0.9077543 
+
+ saved energies -74.9178725 -74.6344484 -74.5445784 -74.4154526 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1032829 0.8330389 0.8637501 0.9077543 
+
+ saved energies -74.7639191 -74.6334382 -74.5415230 -73.5072511 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0314562 0.0647153 0.0797367 0.7337540 0.7487754 0.7820346 
+
+ saved energies -74.4970297 -74.3523743 -74.3197106 -74.0297497 -73.9475577 -72.5653079 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0399901 0.0718785 0.0831251 0.7707880 0.7820346 0.8139230 
+
+ saved energies -74.4958624 -74.2625174 -74.0836083 -73.2948431 -72.6261263 -71.5945449 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0236008 0.0399901 0.0439597 0.0647153 0.0726535 0.0797367 0.0831251 0.7295630 0.7337540 0.7487754 0.7707880 0.7820346 0.7820346 0.8139230 0.8641607 0.9082647 
+
+ saved energies -74.4964460 -74.4339611 -74.3265647 -74.2854365 -74.2084013 -74.1118650 -74.0404848 -73.9968294 -73.9323438 -73.9165588 -73.7127103 -73.5155065 -73.3520406 -73.2801285 -73.1662939 -72.6290262 
+
+ >>> u+d contributions  -0.0228025756778741 
+
+ >>> uu+dd contributions  -0.054999080707669824 
+
+ >>> ud contributions  -0.1376149970722826 
+
+ >>> final result  -75.52331795647083 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0919915 0.7675845 0.8603396 0.9036928 
+
+ saved energies -74.8826190 -74.6425835 -74.5554331 -74.4806508 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1033764 0.8382328 0.8603396 0.9036928 
+
+ saved energies -74.7340500 -74.6414812 -74.5522816 -73.4417729 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0319254 0.0658723 0.0802444 0.7315599 0.7459319 0.7798788 
+
+ saved energies -74.4989627 -74.3615807 -74.3258509 -74.1149681 -73.9887598 -72.8469204 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0379206 0.0729420 0.0803865 0.7724343 0.7798788 0.8149003 
+
+ saved energies -74.4976509 -74.2648452 -74.0836626 -73.3404768 -72.5903612 -71.7170376 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0242914 0.0379206 0.0489727 0.0658723 0.0793634 0.0802444 0.0803865 0.7315599 0.7338811 0.7459319 0.7724343 0.7798788 0.7798788 0.8149003 0.8612562 0.9041091 
+
+ saved energies -74.4983068 -74.4358219 -74.3348509 -74.3050368 -74.2913349 -74.2113068 -74.0797145 -74.0406477 -73.9786167 -73.9566084 -73.7088188 -73.6101478 -73.4530344 -73.3241131 -72.5940487 -72.5097561 
+
+ >>> u+d contributions  -0.02312410574531333 
+
+ >>> uu+dd contributions  -0.05529332346447453 
+
+ >>> ud contributions  -0.13798250940995324 
+
+ >>> final result  -75.52368546880851 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0936884 0.7612103 0.8607391 0.9116656 
+
+ saved energies -74.8987074 -74.6582796 -74.5481522 -74.3252340 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1020326 0.8324408 0.8607391 0.9116656 
+
+ saved energies -74.7512262 -74.6572156 -74.5450560 -73.3416857 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0249134 0.0669656 0.0855735 0.7280782 0.7466861 0.7887383 
+
+ saved energies -74.4854076 -74.3755068 -74.3247499 -74.1329685 -73.9414336 -72.6095948 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0374536 0.0647008 0.0842619 0.7691772 0.7887383 0.8159854 
+
+ saved energies -74.4840787 -74.2805994 -74.0849094 -73.4158002 -72.6257533 -71.5214464 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0240229 0.0374536 0.0422950 0.0669656 0.0740860 0.0842619 0.0855735 0.7269918 0.7280782 0.7466861 0.7691772 0.7887383 0.7887383 0.8159854 0.8614120 0.9120540 
+
+ saved energies -74.4847431 -74.4222582 -74.3488398 -74.2903166 -74.2268691 -74.0966993 -74.0419004 -74.0245473 -73.9100545 -73.7918224 -73.6913094 -73.5529168 -73.3967162 -73.2584590 -72.6281333 -72.5883078 
+
+ >>> u+d contributions  -0.02190875797045874 
+
+ >>> uu+dd contributions  -0.05419803069383885 
+
+ >>> ud contributions  -0.1370709300659416 
+
+ >>> final result  -75.5227738894645 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0935971 0.7619534 0.8579605 0.9064446 
+
+ saved energies -74.9054906 -74.6383782 -74.5468757 -74.2749861 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1018096 0.8344971 0.8579605 0.9064446 
+
+ saved energies -74.7487971 -74.6371889 -74.5438277 -73.2874718 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0293749 0.0627257 0.0835690 0.7264089 0.7472521 0.7806029 
+
+ saved energies -74.4963854 -74.3740885 -74.3213364 -74.1298407 -73.9504909 -72.7396355 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0346810 0.0697531 0.0812928 0.7690632 0.7806029 0.8156749 
+
+ saved energies -74.4950365 -74.2704369 -74.0863037 -73.2231094 -72.6193199 -71.6408307 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0252698 0.0346810 0.0433004 0.0627257 0.0770697 0.0812928 0.0835690 0.7264089 0.7306547 0.7472521 0.7690632 0.7806029 0.7806029 0.8156749 0.8582961 0.9070561 
+
+ saved energies -74.4957109 -74.4332260 -74.3466453 -74.2870649 -74.2175774 -74.2049612 -74.0940007 -74.0429339 -73.9926111 -73.9192393 -73.6742437 -73.5213462 -73.3017281 -73.2093957 -72.6221755 -72.1841982 
+
+ >>> u+d contributions  -0.02197962796578515 
+
+ >>> uu+dd contributions  -0.054108113439654756 
+
+ >>> ud contributions  -0.136661038747703 
+
+ >>> final result  -75.52236399814626 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0930003 0.7694038 0.8590640 0.9063576 
+
+ saved energies -74.8804582 -74.6452255 -74.5513215 -74.3708695 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0979345 0.8346122 0.8590640 0.9063576 
+
+ saved energies -74.7585346 -74.6442377 -74.5484862 -73.3302035 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0330382 0.0634557 0.0827770 0.7311358 0.7504571 0.7808747 
+
+ saved energies -74.5011552 -74.3646750 -74.3151723 -74.0671770 -73.8993798 -72.6017916 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0331562 0.0681095 0.0779328 0.7710514 0.7808747 0.8158279 
+
+ saved energies -74.4998145 -74.2748231 -74.0946081 -73.3112312 -72.6194162 -71.6911457 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0257824 0.0331562 0.0410185 0.0634557 0.0759904 0.0779328 0.0827770 0.7311358 0.7356935 0.7504571 0.7710514 0.7808747 0.7808747 0.8158279 0.8601852 0.9064202 
+
+ saved energies -74.5004848 -74.4379999 -74.3388771 -74.2814155 -74.2203469 -74.1990497 -74.0507130 -74.0330968 -73.9730007 -73.8694785 -73.6799488 -73.5365516 -73.2960492 -73.1246930 -72.7148080 -72.6225203 
+
+ >>> u+d contributions  -0.02225726177189968 
+
+ >>> uu+dd contributions  -0.054440291828101645 
+
+ >>> ud contributions  -0.13711903114637466 
+
+ >>> final result  -75.52282199054493 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0976667 0.7755043 0.8624103 0.9090464 
+
+ saved energies -74.8626366 -74.7136630 -74.6431403 -74.5572752 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1068060 0.8384789 0.8624103 0.9090464 
+
+ saved energies -74.7480541 -74.6421767 -74.5544423 -73.7272817 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0420722 0.0685655 0.0887595 0.7335544 0.7537484 0.7802417 
+
+ saved energies -74.4944422 -74.3429319 -74.2979989 -73.9622797 -73.8706413 -72.6475265 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0412425 0.0781291 0.0872317 0.7711391 0.7802417 0.8171283 
+
+ saved energies -74.4932013 -74.2575070 -74.0803270 -73.2688508 -72.7137821 -71.8136232 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0276815 0.0412425 0.0517856 0.0685655 0.0804061 0.0872317 0.0887595 0.7335544 0.7372599 0.7537484 0.7711391 0.7802417 0.7802417 0.8171283 0.8634373 0.9090942 
+
+ saved energies -74.9032565 -74.4938218 -74.4313368 -74.3177949 -74.2643796 -74.2027858 -74.0365097 -74.0088597 -73.9656674 -73.9307710 -73.8414209 -73.6738224 -73.5604203 -73.2543337 -72.9620133 -72.7142281 
+
+ >>> u+d contributions  -0.025983723140766052 
+
+ >>> uu+dd contributions  -0.05823965176854152 
+
+ >>> ud contributions  -0.1412743654800622 
+
+ >>> final result  -75.52697732487862 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0973321 0.7695839 0.8633588 0.9095355 
+
+ saved energies -74.9036533 -74.6358324 -74.5709130 -74.5417907 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0985147 0.8381653 0.8633588 0.9095355 
+
+ saved energies -74.7328644 -74.6348286 -74.5390911 -73.9137078 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0390436 0.0681142 0.0864455 0.7334597 0.7517909 0.7808615 
+
+ saved energies -74.4942551 -74.3505034 -74.2956460 -74.0208770 -73.8113467 -72.5251847 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0412873 0.0739256 0.0831162 0.7716710 0.7808615 0.8134998 
+
+ saved energies -74.4930214 -74.2609888 -74.0863090 -73.3124095 -72.6442491 -71.7277829 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0245918 0.0412873 0.0451367 0.0681142 0.0787890 0.0831162 0.0864455 0.7334597 0.7341001 0.7517909 0.7716710 0.7808615 0.7808615 0.8134998 0.8637213 0.9100748 
+
+ saved energies -75.1442737 -74.4936382 -74.4311533 -74.3247087 -74.2623984 -74.2067110 -74.0422773 -73.9879635 -73.9820458 -73.7983408 -73.7837355 -73.5657337 -73.5148305 -73.3972589 -73.2965968 -72.6463757 
+
+ >>> u+d contributions  -0.025138317701959935 
+
+ >>> uu+dd contributions  -0.05735113568863963 
+
+ >>> ud contributions  -0.1402408403456616 
+
+ >>> final result  -75.52594379974421 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0972927 0.7645849 0.8570669 0.9083542 
+
+ saved energies -74.8864328 -74.6545919 -74.5465466 -74.2604821 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1069477 0.8327551 0.8570669 0.9083542 
+
+ saved energies -74.7433329 -74.6535133 -74.5435780 -73.3414071 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0313424 0.0655772 0.0866176 0.7270317 0.7480722 0.7823070 
+
+ saved energies -74.4893398 -74.3688063 -74.3140341 -74.0958597 -73.9131229 -72.7411152 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0385969 0.0702550 0.0858452 0.7667168 0.7823070 0.8139651 
+
+ saved energies -74.4880746 -74.2737626 -74.0849326 -73.3384609 -72.6763292 -71.6852252 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0283391 0.0385969 0.0477934 0.0655772 0.0777077 0.0858452 0.0866176 0.7270317 0.7297141 0.7480722 0.7667168 0.7823070 0.7823070 0.8139651 0.8580230 0.9083789 
+
+ saved energies -74.4887072 -74.4262223 -74.3422325 -74.2799352 -74.2200153 -74.0606471 -74.0414611 -74.0284539 -73.8825429 -73.7925121 -73.6826328 -73.5742604 -73.3214397 -73.2906692 -72.6773833 -72.6563555 
+
+ >>> u+d contributions  -0.022279488772691668 
+
+ >>> uu+dd contributions  -0.05444978506319699 
+
+ >>> ud contributions  -0.1371291703697873 
+
+ >>> final result  -75.52283212976835 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0994235 0.7625184 0.8559807 0.9033555 
+
+ saved energies -74.8805078 -74.6496792 -74.5488489 -74.2287406 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029992 0.8377975 0.8559807 0.9033555 
+
+ saved energies -74.7258408 -74.6483531 -74.5458847 -73.2883035 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0324728 0.0664709 0.0864557 0.7241834 0.7441682 0.7781663 
+
+ saved energies -74.4941073 -74.3706571 -74.3168079 -74.1156387 -73.9220516 -72.7299784 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364435 0.0719002 0.0792417 0.7708248 0.7781663 0.8136230 
+
+ saved energies -74.4926335 -74.2570929 -74.0881195 -73.1276170 -72.6022176 -71.6904137 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0272005 0.0364435 0.0442160 0.0664709 0.0792417 0.0815435 0.0864557 0.7241834 0.7309494 0.7441682 0.7708248 0.7781663 0.7781663 0.8136230 0.8569355 0.9035907 
+
+ saved energies -74.4933704 -74.4308855 -74.3422071 -74.2827396 -74.2053572 -74.0967964 -74.0802338 -74.0445324 -73.8915031 -73.8842397 -73.6907308 -73.5239922 -73.1162620 -73.0418102 -72.6053159 -72.5877652 
+
+ >>> u+d contributions  -0.022191146318478964 
+
+ >>> uu+dd contributions  -0.05423371423169739 
+
+ >>> ud contributions  -0.1366143259695536 
+
+ >>> final result  -75.52231728536812 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0962073 0.7670890 0.8578512 0.9102727 
+
+ saved energies -74.9077158 -74.6565409 -74.5426270 -74.2713999 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1045240 0.8362044 0.8578512 0.9102727 
+
+ saved energies -74.7452960 -74.6553893 -74.5397904 -73.4830612 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0347364 0.0630033 0.0848122 0.7308980 0.7527068 0.7809738 
+
+ saved energies -74.4957150 -74.3676197 -74.3003622 -74.1297865 -73.8379738 -72.6300794 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0385937 0.0734523 0.0839790 0.7704471 0.7809738 0.8158324 
+
+ saved energies -74.4944960 -74.2638459 -74.0780832 -73.3439182 -72.6434200 -71.6854858 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0268313 0.0385937 0.0449233 0.0630033 0.0778306 0.0839790 0.0848122 0.7308980 0.7320643 0.7527068 0.7704471 0.7809738 0.7809738 0.8158324 0.8593003 0.9103428 
+
+ saved energies -74.4951055 -74.4326206 -74.3401223 -74.2667222 -74.2111559 -74.0938852 -74.0344888 -74.0159380 -73.9636760 -73.8095758 -73.6795638 -73.5690337 -73.3280288 -73.1687606 -73.0539831 -72.6459691 
+
+ >>> u+d contributions  -0.022586812248805873 
+
+ >>> uu+dd contributions  -0.05476289765700723 
+
+ >>> ud contributions  -0.13752574420772956 
+
+ >>> final result  -75.52322870360629 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0961442 0.7674654 0.8592274 0.9086917 
+
+ saved energies -74.8928636 -74.6481975 -74.5543694 -74.4919489 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1035790 0.8400652 0.8592274 0.9086917 
+
+ saved energies -74.7314886 -74.6468899 -74.5514544 -73.5405041 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0338575 0.0655294 0.0881707 0.7275936 0.7502349 0.7819068 
+
+ saved energies -74.4930400 -74.3767549 -74.3091345 -74.1601407 -73.8846341 -72.8200994 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0384732 0.0738748 0.0836726 0.7721091 0.7819068 0.8173085 
+
+ saved energies -74.4916761 -74.2638282 -74.0838939 -73.2509967 -72.6467901 -71.7479148 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0295340 0.0384732 0.0448219 0.0655294 0.0800800 0.0836726 0.0881707 0.7275936 0.7368587 0.7502349 0.7721091 0.7819068 0.7819068 0.8173085 0.8599540 0.9090073 
+
+ saved energies -74.4923580 -74.4298731 -74.3482681 -74.2752427 -74.2119783 -74.1705476 -74.1233565 -74.0402644 -73.9006976 -73.8550114 -73.7072294 -73.6674561 -73.5099408 -73.2364935 -73.0016841 -72.6488504 
+
+ >>> u+d contributions  -0.02403711478743391 
+
+ >>> uu+dd contributions  -0.056273607363422955 
+
+ >>> ud contributions  -0.13916858628427703 
+
+ >>> final result  -75.52487154568283 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0942732 0.7659091 0.8547090 0.9083934 
+
+ saved energies -74.8744918 -74.6609232 -74.5348781 -74.3219670 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0987517 0.8356128 0.8547090 0.9083934 
+
+ saved energies -74.7286172 -74.6600839 -74.5317256 -73.3959509 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0315989 0.0653864 0.0831394 0.7285030 0.7462560 0.7800435 
+
+ saved energies -74.4975378 -74.3606177 -74.3225961 -74.0335309 -73.9450090 -72.5750313 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0322753 0.0686900 0.0817706 0.7669629 0.7800435 0.8164582 
+
+ saved energies -74.4961622 -74.2803807 -74.0766734 -73.4346125 -72.5915132 -71.6370383 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0223687 0.0322753 0.0431495 0.0653864 0.0775775 0.0817706 0.0831394 0.7285030 0.7314953 0.7462560 0.7669629 0.7800435 0.7800435 0.8164582 0.8557306 0.9087108 
+
+ saved energies -74.4968500 -74.4343651 -74.3360759 -74.2880546 -74.2246952 -74.1421462 -74.0338739 -74.0000675 -73.9799550 -73.9136753 -73.7239511 -73.5281974 -73.4165489 -73.2464548 -72.7272572 -72.5955061 
+
+ >>> u+d contributions  -0.0222105520883033 
+
+ >>> uu+dd contributions  -0.054297664689524044 
+
+ >>> ud contributions  -0.13667953039195904 
+
+ >>> final result  -75.52238248979052 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0925433 0.7661509 0.8615779 0.9079807 
+
+ saved energies -74.8726470 -74.6403793 -74.5579034 -74.4792086 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1011666 0.8336503 0.8615779 0.9079807 
+
+ saved energies -74.7412529 -74.6391949 -74.5550985 -73.4907281 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0295451 0.0649251 0.0854462 0.7286803 0.7492013 0.7845814 
+
+ saved energies -74.4896155 -74.3726092 -74.3053350 -74.1354253 -73.8305682 -72.4692911 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0393314 0.0676064 0.0824263 0.7697614 0.7845814 0.8128563 
+
+ saved energies -74.4883492 -74.2697412 -74.0889432 -73.3215568 -72.6181573 -71.5535512 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0215678 0.0393314 0.0433386 0.0649251 0.0744290 0.0824263 0.0854462 0.7286803 0.7286828 0.7492013 0.7697614 0.7845814 0.7845814 0.8128563 0.8622484 0.9083211 
+
+ saved energies -74.8222190 -74.4889824 -74.4264974 -74.3451604 -74.2718410 -74.2169041 -74.0992892 -74.0451543 -73.9996523 -73.8022273 -73.6823962 -73.5497819 -73.3053371 -73.2470892 -72.6208291 -72.5110295 
+
+ >>> u+d contributions  -0.022921800821315712 
+
+ >>> uu+dd contributions  -0.055110999416158664 
+
+ >>> ud contributions  -0.13779486964236554 
+
+ >>> final result  -75.52349782904092 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946807 0.7646904 0.8602650 0.9090173 
+
+ saved energies -74.9097343 -74.6470691 -74.5389460 -74.3127096 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1016139 0.8333483 0.8602650 0.9090173 
+
+ saved energies -74.7418858 -74.6459507 -74.5361426 -73.5420582 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0316723 0.0643815 0.0841877 0.7301390 0.7499453 0.7826545 
+
+ saved energies -74.4918098 -74.3619810 -74.3097017 -74.0809416 -73.8988234 -72.5828937 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0394624 0.0694678 0.0827256 0.7693966 0.7826545 0.8126599 
+
+ saved energies -74.4905898 -74.2636964 -74.0915919 -73.2743164 -72.6848630 -71.6347432 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0242782 0.0394624 0.0447381 0.0643815 0.0762495 0.0827256 0.0841877 0.7293019 0.7301390 0.7499453 0.7693966 0.7826545 0.7826545 0.8126599 0.8610342 0.9091844 
+
+ saved energies -74.4911998 -74.4287149 -74.3350739 -74.2760033 -74.2105397 -74.2093209 -74.0477753 -74.0463789 -73.9474528 -73.8689152 -73.6832643 -73.6389926 -73.4103774 -73.2593751 -72.7976830 -72.6859547 
+
+ >>> u+d contributions  -0.022749638940518457 
+
+ >>> uu+dd contributions  -0.054897043804754526 
+
+ >>> ud contributions  -0.13755660536231576 
+
+ >>> final result  -75.52325956476088 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0956703 0.7671783 0.8625020 0.9050718 
+
+ saved energies -74.8852558 -74.6392024 -74.5609687 -74.3575845 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1017066 0.8347070 0.8625020 0.9050718 
+
+ saved energies -74.7407378 -74.6381898 -74.5580843 -73.4719068 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0324941 0.0671647 0.0831070 0.7321042 0.7480465 0.7827171 
+
+ saved energies -74.4938318 -74.3600298 -74.3145981 -74.0940714 -73.9113873 -72.6484296 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0392522 0.0692766 0.0808866 0.7711071 0.7827171 0.8127415 
+
+ saved energies -74.4925583 -74.2694302 -74.0915009 -73.4228149 -72.6485257 -71.6893035 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0256031 0.0392522 0.0463749 0.0671647 0.0779211 0.0808866 0.0831070 0.7316114 0.7321042 0.7480465 0.7711071 0.7827171 0.7827171 0.8127415 0.8632793 0.9052359 
+
+ saved energies -74.4931951 -74.4307101 -74.3340130 -74.2807526 -74.2152240 -74.0593363 -74.0478669 -74.0464880 -73.9523098 -73.8812059 -73.7475542 -73.5508283 -73.5210505 -73.4047178 -72.6971321 -72.6507868 
+
+ >>> u+d contributions  -0.022664091537544173 
+
+ >>> uu+dd contributions  -0.05486880645816777 
+
+ >>> ud contributions  -0.13757872634603405 
+
+ >>> final result  -75.52328168574459 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0960289 0.7626076 0.8588432 0.9093131 
+
+ saved energies -74.9142888 -74.6544485 -74.5511096 -74.3257438 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1032474 0.8394969 0.8588432 0.9093131 
+
+ saved energies -74.7321229 -74.6530197 -74.5481357 -73.4517514 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0302924 0.0641336 0.0867992 0.7265972 0.7492628 0.7831040 
+
+ saved energies -74.4942727 -74.3830375 -74.3135473 -74.2200240 -73.9156405 -72.8380212 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0379896 0.0723463 0.0825002 0.7729501 0.7831040 0.8174607 
+
+ saved energies -74.4928837 -74.2608931 -74.0842147 -73.2592726 -72.6489587 -71.6749486 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0262485 0.0379896 0.0442528 0.0641336 0.0814147 0.0825002 0.0867992 0.7265972 0.7321673 0.7492628 0.7729501 0.7831040 0.7831040 0.8174607 0.8598197 0.9093856 
+
+ saved energies -74.4935782 -74.4310933 -74.3535802 -74.2795035 -74.2108462 -74.1809069 -74.0408008 -74.0171977 -73.8851675 -73.7881187 -73.6958035 -73.5514502 -73.3962658 -73.2454932 -72.9527609 -72.6513128 
+
+ >>> u+d contributions  -0.02261513732104942 
+
+ >>> uu+dd contributions  -0.05486091852532131 
+
+ >>> ud contributions  -0.13773878096248704 
+
+ >>> final result  -75.52344174036105 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0921598 0.7616890 0.8598595 0.9092193 
+
+ saved energies -74.9044726 -74.6412389 -74.6373412 -74.5438245 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1038089 0.8405506 0.8598595 0.9092193 
+
+ saved energies -74.7507761 -74.6396673 -74.5406917 -73.4750606 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0303613 0.0647691 0.0870350 0.7244287 0.7466947 0.7811025 
+
+ saved energies -74.4956831 -74.3841630 -74.3164816 -74.2270019 -73.9319239 -72.8289914 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0380038 0.0756166 0.0824100 0.7743092 0.7811025 0.8187153 
+
+ saved energies -74.4942240 -74.2495932 -74.0736462 -73.1273022 -72.5882427 -71.6363692 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0256761 0.0380038 0.0426155 0.0647691 0.0789278 0.0824100 0.0870350 0.7244287 0.7317413 0.7466947 0.7743092 0.7811025 0.7811025 0.8187153 0.8603624 0.9097675 
+
+ saved energies -74.5571071 -74.4949536 -74.4324687 -74.3538125 -74.2820774 -74.2016099 -74.1871054 -74.0307334 -73.9868834 -73.9012477 -73.6607612 -73.5257795 -73.3125446 -73.1170395 -72.8893775 -72.5922133 
+
+ >>> u+d contributions  -0.024540437157786123 
+
+ >>> uu+dd contributions  -0.056745937213285774 
+
+ >>> ud contributions  -0.1394618364956493 
+
+ >>> final result  -75.52516479589421 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0929721 0.7609949 0.8601325 0.9071983 
+
+ saved energies -74.9020966 -74.6324435 -74.5454129 -74.2925446 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1013487 0.8312884 0.8601325 0.9071983 
+
+ saved energies -74.7517034 -74.6310801 -74.5426239 -73.3013415 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0287371 0.0630148 0.0853860 0.7252629 0.7476341 0.7819118 
+
+ saved energies -74.4922593 -74.3767076 -74.3057888 -74.1511945 -73.8406468 -72.4457714 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0377408 0.0680723 0.0801873 0.7697967 0.7819118 0.8122432 
+
+ saved energies -74.4909252 -74.2598780 -74.0893708 -73.1686892 -72.6128974 -71.5158347 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0221941 0.0377408 0.0401167 0.0630148 0.0735735 0.0801873 0.0853860 0.7252629 0.7254708 0.7476341 0.7697967 0.7819118 0.7819118 0.8122432 0.8614398 0.9072425 
+
+ saved energies -74.4915923 -74.4291074 -74.3479258 -74.2722859 -74.2085427 -74.1145231 -74.0455310 -74.0346805 -73.8950948 -73.8120173 -73.6679685 -73.6227968 -73.3183010 -73.1567070 -72.6159106 -72.3472256 
+
+ >>> u+d contributions  -0.022004466101650036 
+
+ >>> uu+dd contributions  -0.05409629495246934 
+
+ >>> ud contributions  -0.13644100579364027 
+
+ >>> final result  -75.5221439651922 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0948707 0.7638792 0.8577670 0.9119756 
+
+ saved energies -74.9126670 -74.6513823 -74.5233689 -74.4960574 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0999546 0.8357433 0.8577670 0.9119756 
+
+ saved energies -74.7438999 -74.6502885 -74.5203634 -73.5986453 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0338032 0.0661441 0.0863377 0.7279086 0.7481021 0.7804431 
+
+ saved energies -74.4954049 -74.3622372 -74.3066789 -74.0822835 -73.8798318 -72.5472922 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0360986 0.0722772 0.0829537 0.7697666 0.7804431 0.8166217 
+
+ saved energies -74.4940241 -74.2652998 -74.0740159 -73.3055794 -72.5958148 -71.6371977 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0222336 0.0360986 0.0434554 0.0661441 0.0781262 0.0829537 0.0863377 0.7279086 0.7289976 0.7481021 0.7697666 0.7804431 0.7804431 0.8166217 0.8588379 0.9120372 
+
+ saved energies -74.4947145 -74.4322296 -74.3472290 -74.3354797 -74.2726332 -74.2119755 -74.0476936 -74.0308823 -74.0155236 -73.8503426 -73.8138517 -73.6720184 -73.5010521 -73.2906323 -72.9674532 -72.5995325 
+
+ >>> u+d contributions  -0.023891712918308345 
+
+ >>> uu+dd contributions  -0.056018424768786476 
+
+ >>> ud contributions  -0.13851812640206262 
+
+ >>> final result  -75.52422108580062 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0930375 0.7729698 0.8585139 0.9098344 
+
+ saved energies -74.8560800 -74.6511861 -74.6075978 -74.5481419 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1039755 0.8337349 0.8585139 0.9098344 
+
+ saved energies -74.7604337 -74.6503865 -74.5451513 -73.4386790 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364885 0.0660027 0.0848891 0.7322887 0.7511751 0.7806892 
+
+ saved energies -74.4968319 -74.3518712 -74.3022084 -74.0167874 -73.8501463 -72.4778455 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0358188 0.0723401 0.0847931 0.7682363 0.7806892 0.8172106 
+
+ saved energies -74.4955725 -74.2761600 -74.0711296 -73.4431576 -72.5946678 -71.6634115 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0229807 0.0358188 0.0478412 0.0660027 0.0743430 0.0847931 0.0848891 0.7321896 0.7322887 0.7511751 0.7682363 0.7806892 0.7806892 0.8172106 0.8599730 0.9099735 
+
+ saved energies -74.4962022 -74.4807811 -74.4337172 -74.3280913 -74.2682833 -74.2197640 -74.0866591 -74.0279527 -73.9843914 -73.9841386 -73.8215496 -73.6714212 -73.5232734 -73.4246488 -72.5984060 -72.4861720 
+
+ >>> u+d contributions  -0.023866486903335857 
+
+ >>> uu+dd contributions  -0.056044996056568416 
+
+ >>> ud contributions  -0.13879763631141653 
+
+ >>> final result  -75.52450059570998 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0939724 0.7656786 0.8599648 0.9082767 
+
+ saved energies -74.8782455 -74.6514356 -74.5470139 -74.4588171 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1034109 0.8350166 0.8599648 0.9082767 
+
+ saved energies -74.7443680 -74.6503631 -74.5439517 -73.4280689 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0317453 0.0671624 0.0845928 0.7293535 0.7467838 0.7822009 
+
+ saved energies -74.4937850 -74.3577484 -74.3133978 -74.0659819 -73.9181165 -72.5169999 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0381858 0.0711336 0.0831096 0.7702249 0.7822009 0.8151487 
+
+ saved energies -74.4924550 -74.2637989 -74.0780898 -73.3089393 -72.6063427 -71.5880672 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0232283 0.0381858 0.0441034 0.0671624 0.0750033 0.0831096 0.0845928 0.7293535 0.7294121 0.7467838 0.7702249 0.7822009 0.7822009 0.8151487 0.8607194 0.9084703 
+
+ saved energies -74.4931200 -74.4306351 -74.3313741 -74.2792133 -74.2101964 -74.0518839 -74.0350318 -74.0320414 -74.0160279 -73.8877868 -73.7614135 -73.5323934 -73.3978220 -73.2938439 -72.8738930 -72.6097145 
+
+ >>> u+d contributions  -0.022894498604373016 
+
+ >>> uu+dd contributions  -0.0550720194904024 
+
+ >>> ud contributions  -0.13764248148355165 
+
+ >>> final result  -75.52334544088211 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0950572 0.7664201 0.8606763 0.9137271 
+
+ saved energies -74.9175801 -74.6518093 -74.6457035 -74.5457853 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1033241 0.8391748 0.8606763 0.9137271 
+
+ saved energies -74.7482146 -74.6445454 -74.5427047 -73.6914098 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0348362 0.0665079 0.0896109 0.7283294 0.7514325 0.7831041 
+
+ saved energies -74.4940780 -74.3705446 -74.3065880 -74.1060302 -73.8820752 -72.6694323 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0374662 0.0753471 0.0874575 0.7709937 0.7831041 0.8209850 
+
+ saved energies -74.4927087 -74.2657716 -74.0672284 -73.3343494 -72.6420486 -71.6878738 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0248588 0.0374662 0.0460165 0.0665079 0.0781354 0.0874575 0.0896109 0.7283294 0.7331775 0.7514325 0.7709937 0.7831041 0.7831041 0.8209850 0.8618646 0.9138165 
+
+ saved energies -74.6301679 -74.4933933 -74.4309084 -74.3428282 -74.2723523 -74.2134307 -74.0705886 -74.0271498 -74.0243466 -73.9237714 -73.8524362 -73.6666764 -73.4952199 -73.3190976 -73.1261857 -72.6448159 
+
+ >>> u+d contributions  -0.025161248693347425 
+
+ >>> uu+dd contributions  -0.05745508999404483 
+
+ >>> ud contributions  -0.14038616723596706 
+
+ >>> final result  -75.52608912663453 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0908777 0.7633925 0.8596376 0.9105200 
+
+ saved energies -74.9072366 -74.6431088 -74.5693183 -74.5404925 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1045638 0.8352857 0.8596376 0.9105200 
+
+ saved energies -74.7565980 -74.6420494 -74.5371814 -73.4424665 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0294996 0.0655577 0.0837355 0.7284784 0.7466562 0.7827142 
+
+ saved energies -74.4942367 -74.3677163 -74.3239780 -74.1527161 -74.0018411 -72.8256896 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0367411 0.0722893 0.0860377 0.7689658 0.7827142 0.8182624 
+
+ saved energies -74.4929179 -74.2729792 -74.0687826 -73.4436955 -72.6206467 -71.6502825 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0249227 0.0367411 0.0469662 0.0655577 0.0761096 0.0837355 0.0860377 0.7284784 0.7307411 0.7466562 0.7689658 0.7827142 0.7827142 0.8182624 0.8601571 0.9108778 
+
+ saved energies -74.4935773 -74.4310924 -74.3410043 -74.2891141 -74.2195863 -74.1164372 -74.0950122 -74.0266593 -74.0044410 -73.9691214 -73.8843363 -73.7003648 -73.5113678 -73.4252084 -72.6855009 -72.6237863 
+
+ >>> u+d contributions  -0.023933193961092315 
+
+ >>> uu+dd contributions  -0.05613632501665526 
+
+ >>> ud contributions  -0.13885129275031502 
+
+ >>> final result  -75.52455425214887 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0923146 0.7664742 0.8558530 0.9083246 
+
+ saved energies -74.8944345 -74.6640545 -74.5435569 -74.3187282 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1050489 0.8389392 0.8558530 0.9083246 
+
+ saved energies -74.7314090 -74.6628121 -74.5404847 -73.3969679 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0307860 0.0610016 0.0820287 0.7294545 0.7504816 0.7806972 
+
+ saved energies -74.4969073 -74.3703477 -74.3175156 -74.1672642 -73.9701601 -72.8696072 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0369716 0.0733856 0.0835432 0.7705397 0.7806972 0.8171113 
+
+ saved energies -74.4956604 -74.2631385 -74.0805487 -73.2550128 -72.6528300 -71.6890963 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0242850 0.0369716 0.0486922 0.0610016 0.0797724 0.0820287 0.0835432 0.7294545 0.7327629 0.7504816 0.7705397 0.7806972 0.7806972 0.8171113 0.8571678 0.9083733 
+
+ saved energies -74.4962838 -74.4337989 -74.3424485 -74.2831528 -74.2108018 -74.1305943 -74.0373640 -74.0301674 -73.9383844 -73.8015446 -73.7206357 -73.5242195 -73.3125468 -73.2409129 -72.8108357 -72.6549006 
+
+ >>> u+d contributions  -0.022417194741426897 
+
+ >>> uu+dd contributions  -0.05456214120006063 
+
+ >>> ud contributions  -0.13723040809971235 
+
+ >>> final result  -75.52293336749827 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0943102 0.7640448 0.8568303 0.9075852 
+
+ saved energies -74.8712783 -74.6521361 -74.5423185 -74.4129004 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029128 0.8347478 0.8568303 0.9075852 
+
+ saved energies -74.7308828 -74.6509716 -74.5393004 -73.3950155 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0307215 0.0652440 0.0855766 0.7258086 0.7461412 0.7806637 
+
+ saved energies -74.4939137 -74.3677385 -74.3143792 -74.0917281 -73.9081960 -72.5709512 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0367615 0.0703743 0.0828471 0.7681909 0.7806637 0.8142765 
+
+ saved energies -74.4925614 -74.2660905 -74.0813760 -73.2412469 -72.6151248 -71.5949313 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0229936 0.0367615 0.0432832 0.0652440 0.0777939 0.0828471 0.0855766 0.7258086 0.7279243 0.7461412 0.7681909 0.7806637 0.7806637 0.8142765 0.8579644 0.9076871 
+
+ saved energies -74.4932375 -74.4307526 -74.3404938 -74.2802604 -74.2326239 -74.2132652 -74.0569876 -74.0381341 -74.0030407 -73.8780478 -73.6759418 -73.5661890 -73.5094593 -73.2275253 -72.6181572 -72.4661322 
+
+ >>> u+d contributions  -0.022753059947690828 
+
+ >>> uu+dd contributions  -0.054859466200545534 
+
+ >>> ud contributions  -0.13726344942601773 
+
+ >>> final result  -75.52296640882457 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0950862 0.7652106 0.8578694 0.9063326 
+
+ saved energies -74.8928178 -74.6447755 -74.5644647 -74.2387374 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1029102 0.8378143 0.8578694 0.9063326 
+
+ saved energies -74.7374184 -74.6436171 -74.5614198 -73.3388420 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0319413 0.0624680 0.0842865 0.7279629 0.7497813 0.7803080 
+
+ saved energies -74.4990685 -74.3689945 -74.3082661 -74.1187272 -73.8825710 -72.5679273 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0348432 0.0721552 0.0827783 0.7696849 0.7803080 0.8176200 
+
+ saved energies -74.4977431 -74.2679954 -74.0751442 -73.2434330 -72.5783384 -71.6042845 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0234398 0.0348432 0.0436006 0.0624680 0.0765861 0.0827783 0.0842865 0.7279629 0.7309261 0.7497813 0.7696849 0.7803080 0.7803080 0.8176200 0.8589744 0.9064478 
+
+ saved energies -74.4984058 -74.4359209 -74.3417806 -74.2741890 -74.2150430 -74.0832490 -74.0319762 -74.0203070 -73.8537076 -73.8530592 -73.6733640 -73.5359647 -73.2298723 -73.1439050 -72.7282168 -72.5824201 
+
+ >>> u+d contributions  -0.021614281260723203 
+
+ >>> uu+dd contributions  -0.053762823504168694 
+
+ >>> ud contributions  -0.13630473863966483 
+
+ >>> final result  -75.52200769803822 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0952784 0.7684427 0.8624493 0.9012766 
+
+ saved energies -74.8614872 -74.6373088 -74.5703567 -74.2823679 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1026324 0.8328905 0.8624493 0.9012766 
+
+ saved energies -74.7439600 -74.6361923 -74.5676125 -73.2907622 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0324643 0.0658483 0.0834235 0.7303000 0.7478752 0.7812592 
+
+ saved energies -74.4950485 -74.3526975 -74.3181697 -73.9911559 -73.9350517 -72.4915392 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0387273 0.0683652 0.0786384 0.7709860 0.7812592 0.8108971 
+
+ saved energies -74.4937574 -74.2531778 -74.1028698 -73.1393901 -72.7104939 -71.6225829 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0254527 0.0387273 0.0444943 0.0658483 0.0738657 0.0786384 0.0834235 0.7303000 0.7308426 0.7478752 0.7709860 0.7812592 0.7812592 0.8108971 0.8632631 0.9016698 
+
+ saved energies -74.4944030 -74.4319180 -74.3257785 -74.2844760 -74.2004160 -74.0588113 -73.9807115 -73.9590834 -73.9085517 -73.9041911 -73.6752143 -73.5441011 -73.1286536 -73.0139654 -72.7130736 -72.7111435 
+
+ >>> u+d contributions  -0.021902217212949427 
+
+ >>> uu+dd contributions  -0.054010378266946706 
+
+ >>> ud contributions  -0.1364469908945475 
+
+ >>> final result  -75.5221499502931 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0932929 0.7702426 0.8601234 0.9057846 
+
+ saved energies -74.8562475 -74.6462203 -74.5431708 -74.4447657 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1002326 0.8312229 0.8601234 0.9057846 
+
+ saved energies -74.7531505 -74.6453321 -74.5403919 -73.3966746 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0340295 0.0664585 0.0826992 0.7320225 0.7482633 0.7806922 
+
+ saved energies -74.4945166 -74.3484339 -74.3105680 -73.9612319 -73.8763537 -72.3846937 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0372195 0.0679895 0.0793863 0.7692954 0.7806922 0.8114622 
+
+ saved energies -74.4932553 -74.2669885 -74.0945809 -73.2392997 -72.6204594 -71.6120328 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0209358 0.0372195 0.0439151 0.0664585 0.0759973 0.0793863 0.0826992 0.7296319 0.7320225 0.7482633 0.7692954 0.7806922 0.7806922 0.8114622 0.8604059 0.9062556 
+
+ saved energies -74.5735023 -74.4938859 -74.4314010 -74.3238975 -74.2769925 -74.2115470 -74.0505758 -73.9974348 -73.9298745 -73.8471062 -73.7250351 -73.6516206 -73.5341216 -73.2248660 -72.6230345 -72.3583527 
+
+ >>> u+d contributions  -0.022871884121676442 
+
+ >>> uu+dd contributions  -0.05497501359958253 
+
+ >>> ud contributions  -0.13750557543703631 
+
+ >>> final result  -75.52320853483559 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0929365 0.7636743 0.8576870 0.9050209 
+
+ saved energies -74.8845532 -74.6326766 -74.5461260 -74.3837310 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1049561 0.8337605 0.8576870 0.9050209 
+
+ saved energies -74.7554181 -74.6313336 -74.5432026 -73.3262609 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0315003 0.0628021 0.0842600 0.7253993 0.7468572 0.7781590 
+
+ saved energies -74.4962848 -74.3762029 -74.3083555 -74.1759722 -73.8665183 -72.6973182 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0379975 0.0725532 0.0815471 0.7691651 0.7781590 0.8127148 
+
+ saved energies -74.4949717 -74.2611490 -74.0830217 -73.2111412 -72.5925320 -71.6433172 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0273414 0.0379975 0.0445848 0.0628021 0.0742895 0.0815471 0.0842600 0.7253993 0.7300328 0.7468572 0.7691651 0.7781590 0.7781590 0.8127148 0.8588556 0.9052587 
+
+ saved energies -74.4956283 -74.4331434 -74.3475196 -74.2745072 -74.2569242 -74.2096040 -74.1389198 -74.0394895 -74.0138956 -73.8373912 -73.6318545 -73.5090257 -73.1979804 -73.1269367 -72.5959943 -72.4412327 
+
+ >>> u+d contributions  -0.022794024911197367 
+
+ >>> uu+dd contributions  -0.054842928713489024 
+
+ >>> ud contributions  -0.13720136114855133 
+
+ >>> final result  -75.52290432054711 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0981100 0.7695480 0.8588630 0.9080128 
+
+ saved energies -74.8846635 -74.6547689 -74.5542144 -74.3690459 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0997208 0.8399057 0.8588630 0.9080128 
+
+ saved energies -74.7329519 -74.6536912 -74.5513681 -73.5376067 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0366554 0.0659424 0.0863857 0.7308812 0.7513245 0.7806115 
+
+ saved energies -74.4981602 -74.3600525 -74.3034230 -74.0445197 -73.8481500 -72.5615977 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0358209 0.0726397 0.0807987 0.7724525 0.7806115 0.8174302 
+
+ saved energies -74.4967806 -74.2653385 -74.0839484 -73.2640928 -72.6140919 -71.7088086 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0241251 0.0358209 0.0438805 0.0659424 0.0807987 0.0812440 0.0863857 0.7308812 0.7346615 0.7513245 0.7724525 0.7806115 0.7806115 0.8174302 0.8598970 0.9081343 
+
+ saved energies -74.4974704 -74.4349855 -74.3336675 -74.2698055 -74.2115632 -74.1615268 -74.0401652 -74.0106070 -73.9968772 -73.8193609 -73.6949400 -73.5574452 -73.5432409 -73.2500471 -72.9498929 -72.6173533 
+
+ >>> u+d contributions  -0.0228217570804831 
+
+ >>> uu+dd contributions  -0.055027373290027326 
+
+ >>> ud contributions  -0.1378639706888619 
+
+ >>> final result  -75.52356693008741 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0926317 0.7618369 0.8570804 0.9065825 
+
+ saved energies -74.9044441 -74.6338981 -74.5462276 -74.2993024 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1003920 0.8353647 0.8570804 0.9065825 
+
+ saved energies -74.7353532 -74.6327784 -74.5431021 -73.3948783 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0296742 0.0617424 0.0829274 0.7261384 0.7473234 0.7793916 
+
+ saved energies -74.4988534 -74.3746405 -74.3208173 -74.1526947 -73.9529023 -72.7419950 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0330821 0.0703182 0.0819807 0.7677291 0.7793916 0.8166277 
+
+ saved energies -74.4975128 -74.2728918 -74.0771520 -73.3111711 -72.6028295 -71.6406171 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0247336 0.0330821 0.0424956 0.0617424 0.0767148 0.0819807 0.0829274 0.7261384 0.7312334 0.7473234 0.7677291 0.7793916 0.7793916 0.8166277 0.8577645 0.9067366 
+
+ saved energies -74.4981831 -74.4356982 -74.3472787 -74.2863212 -74.2200184 -74.1164067 -74.0883221 -74.0342595 -73.9775590 -73.9215588 -73.7151179 -73.6392003 -73.3894206 -73.2960746 -72.6064208 -72.2966418 
+
+ >>> u+d contributions  -0.022307447258953693 
+
+ >>> uu+dd contributions  -0.05438734931509646 
+
+ >>> ud contributions  -0.13674039765272153 
+
+ >>> final result  -75.52244335705127 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0923305 0.7654376 0.8592726 0.9075699 
+
+ saved energies -74.8910424 -74.6279641 -74.5342076 -74.5180717 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1027216 0.8346885 0.8592726 0.9075699 
+
+ saved energies -74.7369897 -74.6269318 -74.5311403 -73.5886812 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0344433 0.0647747 0.0835247 0.7287806 0.7475306 0.7778620 
+
+ saved energies -74.4925035 -74.3545598 -74.3092046 -73.9811762 -73.8654804 -72.5197163 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0381687 0.0742643 0.0849707 0.7671556 0.7778620 0.8139576 
+
+ saved energies -74.4912459 -74.2623434 -74.0722035 -73.2090353 -72.5892065 -71.6192261 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0240322 0.0381687 0.0418505 0.0647747 0.0745482 0.0835247 0.0849707 0.7287806 0.7303971 0.7475306 0.7671556 0.7778620 0.7778620 0.8139576 0.8602141 0.9077038 
+
+ saved energies -74.4918747 -74.4293898 -74.3285397 -74.2750176 -74.2344153 -74.2083366 -74.0290763 -73.9543273 -73.9487229 -73.8860180 -73.8361167 -73.6136173 -73.5017884 -73.1958255 -73.1227921 -72.5928490 
+
+ >>> u+d contributions  -0.02433122795283274 
+
+ >>> uu+dd contributions  -0.05632362878161776 
+
+ >>> ud contributions  -0.13855977811405418 
+
+ >>> final result  -75.52426273751261 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0944649 0.7678554 0.8605149 0.9097585 
+
+ saved energies -74.8751370 -74.6505372 -74.5616622 -74.4082256 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1023844 0.8319345 0.8605149 0.9097585 
+
+ saved energies -74.7730627 -74.6495440 -74.5587973 -73.3185893 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0292805 0.0654714 0.0868872 0.7294097 0.7508254 0.7870164 
+
+ saved energies -74.4882731 -74.3740835 -74.3141028 -74.1370708 -73.9040008 -72.6569865 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0359988 0.0652797 0.0833216 0.7689745 0.7870164 0.8162974 
+
+ saved energies -74.4869684 -74.2819502 -74.0892418 -73.4917482 -72.6930675 -71.6527498 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0253507 0.0359988 0.0456927 0.0654714 0.0775536 0.0833216 0.0868872 0.7294097 0.7304940 0.7508254 0.7689745 0.7870164 0.7870164 0.8162974 0.8614501 0.9097846 
+
+ saved energies -74.4876207 -74.4251358 -74.3478392 -74.2802107 -74.2277446 -74.1007195 -74.0870090 -74.0456076 -74.0210469 -73.8736180 -73.6687972 -73.5388718 -73.4714335 -73.1267298 -72.6940797 -72.4641531 
+
+ >>> u+d contributions  -0.022501929935024624 
+
+ >>> uu+dd contributions  -0.05478797064944513 
+
+ >>> ud contributions  -0.13774331214803173 
+
+ >>> final result  -75.52344627154659 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0957213 0.7695053 0.8598967 0.9122847 
+
+ saved energies -74.8902862 -74.6500402 -74.5409678 -74.5277266 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1046592 0.8356172 0.8598967 0.9122847 
+
+ saved energies -74.7547002 -74.6491128 -74.5379674 -73.5665745 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0366569 0.0669702 0.0868464 0.7318576 0.7517339 0.7820472 
+
+ saved energies -74.4914259 -74.3548697 -74.3006783 -74.0244361 -73.8395059 -72.5487275 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0380767 0.0741817 0.0866384 0.7695905 0.7820472 0.8181522 
+
+ saved energies -74.4901506 -74.2709321 -74.0698998 -73.3671425 -72.6024289 -71.6865646 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0250491 0.0380767 0.0458601 0.0669702 0.0777718 0.0866384 0.0868464 0.7317646 0.7318576 0.7517339 0.7695905 0.7820472 0.7820472 0.8181522 0.8614305 0.9123830 
+
+ saved energies -74.4910572 -74.4907883 -74.4283033 -74.3298658 -74.2667354 -74.2157097 -74.0383589 -74.0266660 -73.9911510 -73.8108415 -73.7760826 -73.6553899 -73.5128338 -73.3497641 -72.9752997 -72.6055462 
+
+ >>> u+d contributions  -0.024219044126733584 
+
+ >>> uu+dd contributions  -0.05642096099007628 
+
+ >>> ud contributions  -0.1393382324461523 
+
+ >>> final result  -75.5250411918447 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0928407 0.7699174 0.8574156 0.9104427 
+
+ saved energies -74.8724075 -74.6576988 -74.5442300 -74.5434253 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1026251 0.8354494 0.8574156 0.9104427 
+
+ saved energies -74.7439831 -74.6566311 -74.5405440 -73.5199915 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0335960 0.0641436 0.0860613 0.7292469 0.7511646 0.7817122 
+
+ saved energies -74.4953836 -74.3650860 -74.3036456 -74.0874792 -73.8614262 -72.5498351 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0368883 0.0712542 0.0840636 0.7689028 0.7817122 0.8160781 
+
+ saved energies -74.4941141 -74.2692394 -74.0794393 -73.3205086 -72.6431454 -71.6470869 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0231671 0.0368883 0.0465707 0.0641436 0.0751420 0.0840636 0.0860613 0.7292469 0.7322482 0.7511646 0.7689028 0.7817122 0.7817122 0.8160781 0.8583977 0.9104805 
+
+ saved energies -74.5951180 -74.4947488 -74.4322639 -74.3384373 -74.2698550 -74.2157244 -74.0525941 -74.0359629 -73.9695863 -73.8681567 -73.8324107 -73.6844997 -73.5220210 -73.3047862 -72.6456046 -72.3839281 
+
+ >>> u+d contributions  -0.023580644673900284 
+
+ >>> uu+dd contributions  -0.055773431809479856 
+
+ >>> ud contributions  -0.13850329852848797 
+
+ >>> final result  -75.52420625792705 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0975504 0.7634828 0.8562991 0.9058933 
+
+ saved energies -74.8735902 -74.6448458 -74.5452438 -74.2976587 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1035257 0.8331852 0.8562991 0.9058933 
+
+ saved energies -74.7374731 -74.6439231 -74.5420997 -73.3315888 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0318870 0.0673837 0.0857392 0.7258736 0.7442291 0.7797258 
+
+ saved energies -74.4915637 -74.3614008 -74.3215793 -74.0370475 -73.9431955 -72.6534481 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0350714 0.0697259 0.0838643 0.7655874 0.7797258 0.8143803 
+
+ saved energies -74.4901790 -74.2763330 -74.0781593 -73.3824168 -72.6229491 -71.6694519 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0274923 0.0350714 0.0448657 0.0673837 0.0773533 0.0838643 0.0857392 0.7258736 0.7296188 0.7442291 0.7655874 0.7797258 0.7797258 0.8143803 0.8574232 0.9059283 
+
+ saved energies -74.4908714 -74.4283865 -74.3361340 -74.2870441 -74.2213742 -74.0352236 -74.0034007 -73.9928136 -73.9214573 -73.9117586 -73.6589503 -73.5321832 -73.3650340 -73.0702519 -72.7002250 -72.6256994 
+
+ >>> u+d contributions  -0.02250549818111477 
+
+ >>> uu+dd contributions  -0.05455823866745677 
+
+ >>> ud contributions  -0.13685586198712998 
+
+ >>> final result  -75.52255882138569 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0956543 0.7653782 0.8603486 0.9084962 
+
+ saved energies -74.8947442 -74.6426591 -74.5410131 -74.4233272 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1041791 0.8327602 0.8603486 0.9084962 
+
+ saved energies -74.7561374 -74.6416646 -74.5380835 -73.5370464 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0324128 0.0670420 0.0853084 0.7296303 0.7478967 0.7825259 
+
+ saved energies -74.4887504 -74.3606475 -74.3151681 -74.0627828 -73.9179146 -72.7009555 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0405447 0.0703662 0.0855190 0.7673730 0.7825259 0.8123473 
+
+ saved energies -74.4875353 -74.2702942 -74.0865802 -73.3917056 -72.6951212 -71.6962605 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0279972 0.0405447 0.0459584 0.0670420 0.0769071 0.0853084 0.0855190 0.7296303 0.7309642 0.7478967 0.7673730 0.7825259 0.7825259 0.8123473 0.8610932 0.9089025 
+
+ saved energies -74.4881429 -74.4256579 -74.3347213 -74.2811198 -74.2160040 -74.2127968 -74.0430850 -74.0285223 -74.0140676 -73.8872437 -73.6805225 -73.5411801 -73.3737137 -73.2047202 -73.0485890 -72.6958514 
+
+ >>> u+d contributions  -0.02353802911837515 
+
+ >>> uu+dd contributions  -0.05571583883595751 
+
+ >>> ud contributions  -0.13838189457183944 
+
+ >>> final result  -75.5240848539704 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0968427 0.7631496 0.8605525 0.9115025 
+
+ saved energies -74.9005371 -74.6546447 -74.5505399 -74.3333183 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1058416 0.8344227 0.8605525 0.9115025 
+
+ saved energies -74.7518392 -74.6534793 -74.5475092 -73.3823983 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0294781 0.0674657 0.0876995 0.7283241 0.7485579 0.7865455 
+
+ saved energies -74.4830758 -74.3729866 -74.3119713 -74.1439502 -73.8903995 -72.6650717 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0394405 0.0696141 0.0856979 0.7704618 0.7865455 0.8167192 
+
+ saved energies -74.4817388 -74.2700714 -74.0773410 -73.3759770 -72.6269745 -71.6158431 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0277267 0.0394405 0.0431211 0.0674657 0.0773017 0.0856979 0.0876995 0.7283241 0.7291074 0.7485579 0.7704618 0.7865455 0.7865455 0.8167192 0.8614963 0.9118233 
+
+ saved energies -74.4824073 -74.4199224 -74.3454919 -74.2778179 -74.2171582 -74.1074420 -74.0341752 -74.0202711 -73.9408306 -73.8604313 -73.7026431 -73.5860792 -73.3579274 -73.1718354 -72.7662053 -72.6293520 
+
+ >>> u+d contributions  -0.022896406794215805 
+
+ >>> uu+dd contributions  -0.05511882881079806 
+
+ >>> ud contributions  -0.13796821290274702 
+
+ >>> final result  -75.5236711723013 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0944821 0.7655150 0.8597917 0.9061376 
+
+ saved energies -74.8819705 -74.6434725 -74.5585249 -74.3071859 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1022272 0.8338711 0.8597917 0.9061376 
+
+ saved energies -74.7486200 -74.6424765 -74.5554895 -73.3158961 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0297621 0.0650606 0.0844015 0.7285618 0.7479027 0.7832012 
+
+ saved energies -74.4915907 -74.3626000 -74.3268179 -74.0222064 -73.9833384 -72.6658464 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0354328 0.0678126 0.0827841 0.7682297 0.7832012 0.8155810 
+
+ saved energies -74.4902705 -74.2721658 -74.0905790 -73.2561156 -72.6878743 -71.6401602 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0266140 0.0354328 0.0430841 0.0650606 0.0759029 0.0827841 0.0844015 0.7285618 0.7318629 0.7479027 0.7682297 0.7832012 0.7832012 0.8155810 0.8606454 0.9063926 
+
+ saved energies -74.4909306 -74.4284457 -74.3367367 -74.2924072 -74.2179285 -74.0472530 -74.0388155 -73.9889181 -73.9510305 -73.8901725 -73.6766153 -73.5440573 -73.2415657 -73.1319381 -72.6890190 -72.6672205 
+
+ >>> u+d contributions  -0.02217138041379725 
+
+ >>> uu+dd contributions  -0.05433606624626754 
+
+ >>> ud contributions  -0.1369596985134923 
+
+ >>> final result  -75.52266265791205 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0969824 0.7696201 0.8607500 0.9089205 
+
+ saved energies -74.8959241 -74.6467119 -74.5541840 -74.4215240 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1040100 0.8379276 0.8607500 0.9089205 
+
+ saved energies -74.7458102 -74.6456175 -74.5513184 -73.5476177 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0370876 0.0661096 0.0863263 0.7318101 0.7520268 0.7810489 
+
+ saved energies -74.4969162 -74.3618466 -74.3025495 -74.0696479 -73.8418807 -72.6355136 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0389631 0.0747551 0.0837689 0.7720351 0.7810489 0.8168409 
+
+ saved energies -74.4956364 -74.2644570 -74.0806402 -73.3029510 -72.6266445 -71.7324277 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0284662 0.0389631 0.0446110 0.0661096 0.0783044 0.0837689 0.0863263 0.7318101 0.7358864 0.7520268 0.7720351 0.7810489 0.7810489 0.8168409 0.8612506 0.9095117 
+
+ saved energies -74.4962763 -74.4337914 -74.3351081 -74.2688743 -74.2109892 -74.1321019 -74.0369896 -74.0353504 -74.0016809 -73.8133939 -73.7431069 -73.5812720 -73.5010432 -73.2876132 -73.1655377 -72.6294045 
+
+ >>> u+d contributions  -0.023442899000293484 
+
+ >>> uu+dd contributions  -0.05569641521880284 
+
+ >>> ud contributions  -0.1386533085465112 
+
+ >>> final result  -75.52435626794507 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0911542 0.7665589 0.8556947 0.9096980 
+
+ saved energies -74.8783554 -74.6469732 -74.5352332 -74.3561299 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005782 0.8316580 0.8556947 0.9096980 
+
+ saved energies -74.7445785 -74.6459369 -74.5323739 -73.3907059 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0313851 0.0609455 0.0840619 0.7274910 0.7506075 0.7801678 
+
+ saved energies -74.4942233 -74.3671508 -74.3010330 -74.0661675 -73.8147841 -72.3676486 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0346050 0.0686467 0.0830743 0.7657401 0.7801678 0.8142095 
+
+ saved energies -74.4929821 -74.2750528 -74.0802950 -73.2457088 -72.5853999 -71.5370971 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0209654 0.0346050 0.0417498 0.0609455 0.0718574 0.0830743 0.0840619 0.7274910 0.7283045 0.7506075 0.7657401 0.7801678 0.7801678 0.8142095 0.8555928 0.9111043 
+
+ saved energies -74.4936027 -74.4311178 -74.3410526 -74.2674177 -74.2209092 -74.0887498 -74.0366770 -74.0318185 -73.8403395 -73.7868719 -73.7387316 -73.6400436 -73.4507894 -73.2312429 -72.5889563 -72.5714575 
+
+ >>> u+d contributions  -0.02246008932660655 
+
+ >>> uu+dd contributions  -0.05448015060989164 
+
+ >>> ud contributions  -0.13675079637549267 
+
+ >>> final result  -75.52245375577405 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0960752 0.7656066 0.8582355 0.9056637 
+
+ saved energies -74.8914571 -74.6376007 -74.5551898 -74.1809015 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1038679 0.8317295 0.8582355 0.9056637 
+
+ saved energies -74.7525088 -74.6365601 -74.5523329 -73.2821744 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0323948 0.0634530 0.0842196 0.7285708 0.7493375 0.7803957 
+
+ saved energies -74.4941372 -74.3676872 -74.3076987 -74.1064172 -73.8693025 -72.6161631 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364287 0.0693526 0.0822533 0.7674950 0.7803957 0.8133196 
+
+ saved energies -74.4928794 -74.2744520 -74.0866352 -73.3420876 -72.6300992 -71.6696134 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0269493 0.0364287 0.0457304 0.0634530 0.0752618 0.0822533 0.0842196 0.7285708 0.7305513 0.7493375 0.7674950 0.7803957 0.7803957 0.8133196 0.8592569 0.9057186 
+
+ saved energies -74.4935083 -74.4310234 -74.3413475 -74.2739534 -74.2204117 -74.0711450 -74.0429251 -74.0333316 -73.8401114 -73.7931403 -73.6639625 -73.5719287 -73.3251563 -72.9706156 -72.7224763 -72.6325520 
+
+ >>> u+d contributions  -0.02182546949650941 
+
+ >>> uu+dd contributions  -0.053920573619380935 
+
+ >>> ud contributions  -0.13640403104226376 
+
+ >>> final result  -75.52210699044082 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0964780 0.7609518 0.8572877 0.9084386 
+
+ saved energies -74.9075422 -74.6399554 -74.5411724 -74.3071637 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1023286 0.8345513 0.8572877 0.9084386 
+
+ saved energies -74.7608116 -74.6386416 -74.5382009 -73.2830941 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0311590 0.0641456 0.0870540 0.7245240 0.7474325 0.7804190 
+
+ saved energies -74.4961278 -74.3833320 -74.3121590 -74.2201903 -73.9040396 -72.8005093 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0343031 0.0708841 0.0804762 0.7708268 0.7804190 0.8169999 
+
+ saved energies -74.4946675 -74.2699130 -74.0832075 -73.2838710 -72.5977504 -71.7006911 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0285798 0.0343031 0.0443126 0.0641456 0.0788712 0.0804762 0.0870540 0.7245240 0.7305288 0.7474325 0.7708268 0.7804190 0.7804190 0.8169999 0.8572283 0.9093612 
+
+ saved energies -74.4953976 -74.4329127 -74.3546757 -74.2781292 -74.2184007 -74.1817655 -74.0397743 -74.0171963 -73.8740397 -73.8732647 -73.6974073 -73.5211501 -73.2689056 -73.0103426 -72.6880544 -72.6012707 
+
+ >>> u+d contributions  -0.022478394733720947 
+
+ >>> uu+dd contributions  -0.05462310369336832 
+
+ >>> ud contributions  -0.1372400466110338 
+
+ >>> final result  -75.5229430060096 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0966817 0.7643076 0.8588416 0.9099978 
+
+ saved energies -74.9167516 -74.6551534 -74.5446899 -74.3707300 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1032898 0.8411867 0.8588416 0.9099978 
+
+ saved energies -74.7279422 -74.6539457 -74.5415642 -73.5812610 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0340018 0.0658383 0.0854711 0.7294433 0.7490760 0.7809125 
+
+ saved energies -74.4978995 -74.3679464 -74.3136109 -74.1119588 -73.9057464 -72.7544299 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0378851 0.0757454 0.0842449 0.7724131 0.7809125 0.8187729 
+
+ saved energies -74.4965434 -74.2642208 -74.0745124 -73.2575046 -72.5827128 -71.6991802 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0278618 0.0378851 0.0436647 0.0658383 0.0796244 0.0842449 0.0854711 0.7294433 0.7342672 0.7490760 0.7724131 0.7809125 0.7809125 0.8187729 0.8598662 0.9100436 
+
+ saved energies -74.4972214 -74.4347365 -74.3403622 -74.2792826 -74.2116193 -74.0997949 -74.0765427 -74.0315337 -73.9148719 -73.8755815 -73.6879216 -73.5701907 -73.5195908 -73.2433128 -73.1696236 -72.5865601 
+
+ >>> u+d contributions  -0.02319722766376044 
+
+ >>> uu+dd contributions  -0.05543290161823961 
+
+ >>> ud contributions  -0.1382584719277464 
+
+ >>> final result  -75.5239614313263 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0974629 0.7602694 0.8569348 0.9083818 
+
+ saved energies -74.9163407 -74.6420141 -74.5363057 -74.1826132 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005477 0.8338676 0.8569348 0.9083818 
+
+ saved energies -74.7371182 -74.6407580 -74.5334862 -73.4284090 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0317021 0.0634548 0.0866684 0.7248560 0.7480696 0.7798224 
+
+ saved energies -74.4958713 -74.3770811 -74.3063412 -74.1448320 -73.8510723 -72.5834614 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0364280 0.0700436 0.0816015 0.7682644 0.7798224 0.8134380 
+
+ saved energies -74.4945313 -74.2657551 -74.0855088 -73.2434588 -72.6316277 -71.6304922 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0260146 0.0364280 0.0400471 0.0634548 0.0781497 0.0816015 0.0866684 0.7248560 0.7283098 0.7480696 0.7682644 0.7798224 0.7798224 0.8134380 0.8578122 0.9088261 
+
+ saved energies -74.4952013 -74.4327164 -74.3487491 -74.2726736 -74.2139361 -74.1084050 -74.0418222 -74.0103041 -73.8484036 -73.8222494 -73.6764065 -73.5160242 -73.2298262 -73.1999892 -72.9946703 -72.6343263 
+
+ >>> u+d contributions  -0.021983539414808007 
+
+ >>> uu+dd contributions  -0.054091601381928006 
+
+ >>> ud contributions  -0.13647050431342295 
+
+ >>> final result  -75.52217346371198 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0991596 0.7683584 0.8607628 0.9085665 
+
+ saved energies -74.8994709 -74.6605983 -74.5572128 -74.3232076 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1058251 0.8374603 0.8607628 0.9085665 
+
+ saved energies -74.7498862 -74.6598864 -74.5539651 -73.4569214 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0354115 0.0696501 0.0835804 0.7348433 0.7487736 0.7830122 
+
+ saved energies -74.4955089 -74.3445114 -74.3241563 -73.9996515 -73.9888588 -72.7193991 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0373921 0.0732952 0.0858981 0.7704092 0.7830122 0.8189152 
+
+ saved energies -74.4942294 -74.2769121 -74.0748369 -73.4810288 -72.6381058 -71.7468912 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0292038 0.0373921 0.0475805 0.0696501 0.0814308 0.0835804 0.0858981 0.7331661 0.7348433 0.7487736 0.7704092 0.7830122 0.7830122 0.8189152 0.8613580 0.9091064 
+
+ saved energies -74.4948692 -74.4323843 -74.3221163 -74.2894427 -74.2191897 -74.0691730 -74.0322045 -73.9671428 -73.9571798 -73.9271896 -73.6960856 -73.6003134 -73.4612688 -73.2581860 -72.9505904 -72.6405692 
+
+ >>> u+d contributions  -0.022702995616017976 
+
+ >>> uu+dd contributions  -0.05502009750461552 
+
+ >>> ud contributions  -0.13811287143353684 
+
+ >>> final result  -75.52381583083209 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0918893 0.7723917 0.8618085 0.9069679 
+
+ saved energies -74.9017954 -74.6440527 -74.6191933 -74.5641286 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1013382 0.8411284 0.8618085 0.9069679 
+
+ saved energies -74.7180149 -74.6428758 -74.5612825 -73.7031985 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0347402 0.0637399 0.0846121 0.7319166 0.7527888 0.7817885 
+
+ saved energies -74.4969481 -74.3580627 -74.3056324 -74.0943176 -73.9158856 -72.6567912 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0395693 0.0738329 0.0836164 0.7720051 0.7817885 0.8160522 
+
+ saved energies -74.4957301 -74.2556192 -74.0855949 -73.2504519 -72.7041688 -71.6933659 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0207906 0.0395693 0.0485039 0.0637399 0.0797883 0.0836164 0.0846121 0.7319166 0.7351734 0.7527888 0.7720051 0.7817885 0.7817885 0.8160522 0.8625402 0.9075062 
+
+ saved energies -75.5263402 -74.4963391 -74.4338542 -74.3307800 -74.2719083 -74.2029900 -74.0598147 -74.0418545 -73.9617157 -73.8857277 -73.6915674 -73.6680231 -73.5254695 -73.2371033 -72.8443950 -72.7051279 
+
+ >>> u+d contributions  -0.024527015664603517 
+
+ >>> uu+dd contributions  -0.056769109523041435 
+
+ >>> ud contributions  -0.1396283675396777 
+
+ >>> final result  -75.52533132693823 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0983117 0.7614132 0.8567511 0.9087921 
+
+ saved energies -74.8927563 -74.6558329 -74.5484621 -74.1868752 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1008358 0.8350384 0.8567511 0.9087921 
+
+ saved energies -74.7189877 -74.6547666 -74.5454563 -73.3959674 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0291227 0.0665359 0.0873448 0.7252893 0.7460982 0.7835113 
+
+ saved energies -74.4887137 -74.3712381 -74.3113466 -74.1175362 -73.8883171 -72.5051864 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0361100 0.0671974 0.0838075 0.7669012 0.7835113 0.8145987 
+
+ saved energies -74.4873472 -74.2767477 -74.0797344 -73.3701679 -72.6096108 -71.5613440 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0241734 0.0361100 0.0409643 0.0665359 0.0783617 0.0838075 0.0873448 0.7252893 0.7270983 0.7460982 0.7669012 0.7835113 0.7835113 0.8145987 0.8566326 0.9098337 
+
+ saved energies -74.4880305 -74.4255455 -74.3447775 -74.2773180 -74.2228972 -74.0820040 -74.0364827 -73.9999738 -73.8585877 -73.7394364 -73.6587847 -73.5503736 -73.3524954 -73.3271786 -72.6984123 -72.6125526 
+
+ >>> u+d contributions  -0.0216854377725542 
+
+ >>> uu+dd contributions  -0.05383899605492626 
+
+ >>> ud contributions  -0.1364372408887089 
+
+ >>> final result  -75.52214020028727 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0961643 0.7666704 0.8623638 0.9064696 
+
+ saved energies -74.9026774 -74.6245628 -74.5477839 -74.3963040 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1037489 0.8334274 0.8623638 0.9064696 
+
+ saved energies -74.7568693 -74.6235887 -74.5448722 -73.5518856 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0369090 0.0657946 0.0839452 0.7318889 0.7500394 0.7789251 
+
+ saved energies -74.4947400 -74.3460995 -74.3043826 -73.9737738 -73.8770867 -72.5307541 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0389473 0.0740798 0.0837082 0.7692966 0.7789251 0.8140576 
+
+ saved energies -74.4934999 -74.2605415 -74.0815914 -73.2403359 -72.6405412 -71.6819746 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0239097 0.0389473 0.0470215 0.0657946 0.0780290 0.0837082 0.0839452 0.7289837 0.7318889 0.7500394 0.7692966 0.7789251 0.7789251 0.8140576 0.8632528 0.9065825 
+
+ saved energies -74.4941200 -74.4316350 -74.3209503 -74.2705913 -74.2077881 -74.2057716 -74.0379495 -74.0081530 -73.9418590 -73.8475738 -73.7055284 -73.6292667 -73.4291384 -73.2264440 -72.8960667 -72.6427500 
+
+ >>> u+d contributions  -0.02346755197736633 
+
+ >>> uu+dd contributions  -0.05555320457064633 
+
+ >>> ud contributions  -0.13812386031705154 
+
+ >>> final result  -75.52382681971561 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0966513 0.7636563 0.8622169 0.9089630 
+
+ saved energies -74.9092606 -74.6505067 -74.5581892 -74.4366512 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1024917 0.8421435 0.8622169 0.9089630 
+
+ saved energies -74.7246368 -74.6493063 -74.5549702 -73.5581730 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0320602 0.0682378 0.0855612 0.7301825 0.7475060 0.7836835 
+
+ saved energies -74.4942461 -74.3647628 -74.3208996 -74.1121274 -73.9575156 -72.7275285 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0378599 0.0742241 0.0831497 0.7747579 0.7836835 0.8200477 
+
+ saved energies -74.4928298 -74.2594014 -74.0727145 -73.2560505 -72.5726208 -71.6534332 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0248433 0.0378599 0.0432109 0.0682378 0.0822601 0.0831497 0.0855612 0.7301825 0.7316413 0.7475060 0.7747579 0.7836835 0.7836835 0.8200477 0.8631835 0.9090006 
+
+ saved energies -74.4935380 -74.4310531 -74.3370847 -74.2862918 -74.2434240 -74.2069801 -74.0771478 -74.0300208 -73.9936379 -73.9262034 -73.8010998 -73.6269471 -73.5458420 -73.2419783 -72.8757148 -72.5767387 
+
+ >>> u+d contributions  -0.023376161730805863 
+
+ >>> uu+dd contributions  -0.05566543609441209 
+
+ >>> ud contributions  -0.13861441673820776 
+
+ >>> final result  -75.52431737613676 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0946157 0.7634270 0.8581582 0.9079475 
+
+ saved energies -74.8956855 -74.6296995 -74.5348082 -74.4482617 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1024733 0.8325155 0.8581582 0.9079475 
+
+ saved energies -74.7445874 -74.6286029 -74.5318708 -73.5153669 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0332570 0.0643854 0.0862738 0.7258004 0.7476888 0.7788172 
+
+ saved energies -74.4938740 -74.3636707 -74.3091194 -74.0806706 -73.9092741 -72.6346847 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0369642 0.0717300 0.0843780 0.7661692 0.7788172 0.8135830 
+
+ saved energies -74.4925817 -74.2661544 -74.0811040 -73.2588652 -72.6650098 -71.6730445 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0243939 0.0369642 0.0462875 0.0643854 0.0775103 0.0843780 0.0862738 0.7258004 0.7280436 0.7476888 0.7661692 0.7788172 0.7788172 0.8135830 0.8591948 0.9081535 
+
+ saved energies -74.4932279 -74.4307429 -74.3368935 -74.2751254 -74.2404668 -74.2128576 -74.0462959 -74.0376683 -73.9801540 -73.8791355 -73.7781253 -73.6266733 -73.4759024 -73.2444303 -72.7769977 -72.6666593 
+
+ >>> u+d contributions  -0.02365861797792147 
+
+ >>> uu+dd contributions  -0.05571515536740522 
+
+ >>> ud contributions  -0.13804720788268182 
+
+ >>> final result  -75.52375016728124 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0966662 0.7628464 0.8601899 0.9097315 
+
+ saved energies -74.9130034 -74.6402525 -74.5470496 -74.2537365 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005120 0.8325373 0.8601899 0.9097315 
+
+ saved energies -74.7410797 -74.6392438 -74.5441852 -73.5405087 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0301421 0.0648461 0.0866084 0.7281086 0.7498709 0.7845749 
+
+ saved energies -74.4863995 -74.3652043 -74.3104970 -74.0847015 -73.9072867 -72.5880792 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0374577 0.0669104 0.0849271 0.7665582 0.7845749 0.8140276 
+
+ saved energies -74.4851410 -74.2745730 -74.0880288 -73.3783351 -72.7087166 -71.6251386 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0243657 0.0374577 0.0437881 0.0648461 0.0775265 0.0849271 0.0866084 0.7276404 0.7281086 0.7498709 0.7665582 0.7845749 0.7845749 0.8140276 0.8615184 0.9099326 
+
+ saved energies -74.4857703 -74.4232854 -74.3392105 -74.2766459 -74.2203543 -74.1623545 -74.0497749 -74.0443515 -73.9985210 -73.8768407 -73.6760022 -73.5159603 -73.3606538 -73.2211070 -72.8208738 -72.7090925 
+
+ >>> u+d contributions  -0.022538443004465256 
+
+ >>> uu+dd contributions  -0.05468353209620174 
+
+ >>> ud contributions  -0.1372716836362385 
+
+ >>> final result  -75.5229746430348 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0935274 0.7692350 0.8578802 0.9082639 
+
+ saved energies -74.8877881 -74.6519023 -74.5511060 -74.4681545 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1023389 0.8390062 0.8578802 0.9082639 
+
+ saved energies -74.7413050 -74.6507974 -74.5480803 -73.4677803 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0344469 0.0635724 0.0844188 0.7300344 0.7508809 0.7800063 
+
+ saved energies -74.5006919 -74.3646985 -74.3117478 -74.1058053 -73.9236308 -72.7085048 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0349447 0.0737383 0.0824156 0.7713290 0.7800063 0.8187999 
+
+ saved energies -74.4993595 -74.2670436 -74.0785707 -73.2665071 -72.6140551 -71.7110947 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0254922 0.0349447 0.0459434 0.0635724 0.0781449 0.0824156 0.0844188 0.7300344 0.7356956 0.7508809 0.7713290 0.7800063 0.7800063 0.8187999 0.8583706 0.9090317 
+
+ saved energies -74.5000257 -74.4375407 -74.3379161 -74.2776073 -74.2136506 -74.0709442 -74.0509161 -74.0352876 -74.0113395 -73.8932842 -73.7605916 -73.6577280 -73.4646949 -73.2522774 -72.7132626 -72.6172570 
+
+ >>> u+d contributions  -0.023209726159230316 
+
+ >>> uu+dd contributions  -0.05540725587283486 
+
+ >>> ud contributions  -0.13816318021163518 
+
+ >>> final result  -75.52386613961019 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0932671 0.7655220 0.8584567 0.9077362 
+
+ saved energies -74.9043379 -74.6429732 -74.5515087 -74.3143781 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1051692 0.8355715 0.8584567 0.9077362 
+
+ saved energies -74.7585453 -74.6416057 -74.5486441 -73.3263018 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0320460 0.0610958 0.0842660 0.7282250 0.7513952 0.7804450 
+
+ saved energies -74.4988387 -74.3828333 -74.3077680 -74.2295908 -73.8678861 -72.8034102 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0372571 0.0730218 0.0815221 0.7719447 0.7804450 0.8162097 
+
+ saved energies -74.4975529 -74.2634060 -74.0845707 -73.2548496 -72.6205610 -71.7015148 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0284716 0.0372571 0.0457951 0.0610958 0.0759958 0.0815221 0.0842660 0.7282250 0.7337092 0.7513952 0.7719447 0.7804450 0.7804450 0.8162097 0.8594808 0.9078139 
+
+ saved energies -74.4981958 -74.4357109 -74.3536427 -74.2739794 -74.2129638 -74.1904282 -74.0409335 -74.0357679 -73.9373789 -73.8387765 -73.6669181 -73.5689081 -73.2409007 -73.1220704 -72.6737451 -72.6235555 
+
+ >>> u+d contributions  -0.022384839805916806 
+
+ >>> uu+dd contributions  -0.054563512601667384 
+
+ >>> ud contributions  -0.13721887537390212 
+
+ >>> final result  -75.52292183477246 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0950830 0.7658410 0.8591382 0.9085357 
+
+ saved energies -74.8824771 -74.6436000 -74.5403768 -74.4025049 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1005373 0.8317982 0.8591382 0.9085357 
+
+ saved energies -74.7517651 -74.6427469 -74.5373969 -73.4435491 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0321867 0.0670250 0.0848497 0.7294492 0.7472739 0.7821122 
+
+ saved energies -74.4916432 -74.3565177 -74.3137864 -74.0510466 -73.9229876 -72.5389175 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0357226 0.0678925 0.0827471 0.7672576 0.7821122 0.8142820 
+
+ saved energies -74.4903314 -74.2765310 -74.0821252 -73.4385012 -72.6364052 -71.6467919 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0235119 0.0357226 0.0448293 0.0670250 0.0765696 0.0827471 0.0848497 0.7289073 0.7294492 0.7472739 0.7672576 0.7821122 0.7821122 0.8142820 0.8605280 0.9085882 
+
+ saved energies -74.4909873 -74.4285024 -74.3320300 -74.2796840 -74.2208118 -74.0406069 -74.0388280 -74.0174845 -73.8924815 -73.8886357 -73.6702129 -73.6164350 -73.5065291 -73.4195033 -72.8194383 -72.6388101 
+
+ >>> u+d contributions  -0.02293469235396453 
+
+ >>> uu+dd contributions  -0.05506815974221417 
+
+ >>> ud contributions  -0.13760106473828893 
+
+ >>> final result  -75.52330402413685 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0926627 0.7605963 0.8579324 0.9120962 
+
+ saved energies -74.9221528 -74.6610376 -74.5401550 -74.2782606 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1044564 0.8358451 0.8579324 0.9120962 
+
+ saved energies -74.7471802 -74.6597109 -74.5370579 -73.3415493 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0274385 0.0625745 0.0844914 0.7271523 0.7490693 0.7842053 
+
+ saved energies -74.4956603 -74.3838189 -74.3173089 -74.2183438 -73.9179578 -72.7367109 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0372089 0.0709597 0.0840702 0.7710949 0.7842053 0.8179561 
+
+ saved energies -74.4943593 -74.2676077 -74.0763359 -73.2829383 -72.5986877 -71.5711177 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0244403 0.0372089 0.0427395 0.0625745 0.0762437 0.0840702 0.0844914 0.7271523 0.7285540 0.7490693 0.7710949 0.7842053 0.7842053 0.8179561 0.8589844 0.9121429 
+
+ saved energies -74.4950098 -74.4325249 -74.3549084 -74.2829568 -74.2166446 -74.1797940 -74.0605159 -74.0334345 -73.8976914 -73.8874961 -73.7155965 -73.5391736 -73.2681403 -73.0907901 -72.7095027 -72.6022068 
+
+ >>> u+d contributions  -0.021811069905544867 
+
+ >>> uu+dd contributions  -0.05408051520157627 
+
+ >>> ud contributions  -0.13685276050920028 
+
+ >>> final result  -75.52255571990776 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0904009 0.7707566 0.8577940 0.9099995 
+
+ saved energies -74.8755581 -74.6582593 -74.5533020 -74.3888447 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0992114 0.8346750 0.8577940 0.9099995 
+
+ saved energies -74.7345901 -74.6572151 -74.5505675 -73.4882044 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0309529 0.0601989 0.0837308 0.7307447 0.7542766 0.7835226 
+
+ saved energies -74.4964313 -74.3685715 -74.3006930 -74.1158568 -73.8377486 -72.4087103 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0354519 0.0673173 0.0825394 0.7683006 0.7835226 0.8153880 
+
+ saved energies -74.4952504 -74.2743637 -74.0873808 -73.3250195 -72.6542867 -71.5607599 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0205132 0.0354519 0.0436642 0.0601989 0.0717915 0.0825394 0.0837308 0.7307447 0.7322206 0.7542766 0.7683006 0.7835226 0.7835226 0.8153880 0.8582762 0.9105923 
+
+ saved energies -74.4958408 -74.4333559 -74.3420800 -74.3044758 -74.2672742 -74.2207178 -74.0805955 -74.0435207 -73.9635668 -73.8394693 -73.8094833 -73.6779177 -73.4960208 -73.3094264 -72.6564224 -72.4629867 
+
+ >>> u+d contributions  -0.022208986690934414 
+
+ >>> uu+dd contributions  -0.054381433751888815 
+
+ >>> ud contributions  -0.13701638513674264 
+
+ >>> final result  -75.5227193445353 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0962647 0.7660166 0.8617805 0.9068648 
+
+ saved energies -74.8920264 -74.6456627 -74.5625520 -74.2749182 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1067272 0.8327702 0.8617805 0.9068648 
+
+ saved energies -74.7635200 -74.6446054 -74.5595833 -73.3074114 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0321952 0.0662359 0.0850454 0.7304179 0.7492274 0.7832681 
+
+ saved energies -74.4923177 -74.3568178 -74.3155981 -74.0061116 -73.9123860 -72.5465833 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0392330 0.0708033 0.0843832 0.7696882 0.7832681 0.8148383 
+
+ saved energies -74.4910503 -74.2639500 -74.0868342 -73.2504684 -72.6718553 -71.6147827 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0279054 0.0392330 0.0440152 0.0662359 0.0739135 0.0843832 0.0850454 0.7298088 0.7304179 0.7492274 0.7696882 0.7832681 0.7832681 0.8148383 0.8627010 0.9070072 
+
+ saved energies -74.4916840 -74.4291991 -74.3306344 -74.2815365 -74.2102259 -74.0433962 -74.0345659 -73.9969250 -73.9732744 -73.8818114 -73.6745126 -73.5725238 -73.2367562 -72.9684498 -72.7266678 -72.6734078 
+
+ >>> u+d contributions  -0.022112653264910142 
+
+ >>> uu+dd contributions  -0.054317452925129975 
+
+ >>> ud contributions  -0.13701663749939796 
+
+ >>> final result  -75.52271959689796 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0935698 0.7671712 0.8591818 0.9077268 
+
+ saved energies -74.8916667 -74.6415295 -74.6120976 -74.5431665 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0957933 0.8383108 0.8591818 0.9077268 
+
+ saved energies -74.7198895 -74.6405158 -74.5401737 -73.6656137 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0330376 0.0669265 0.0856530 0.7281717 0.7468983 0.7807872 
+
+ saved energies -74.4959849 -74.3613652 -74.3137551 -74.0937995 -73.9331077 -72.6047326 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0345297 0.0697192 0.0805534 0.7699530 0.7807872 0.8159766 
+
+ saved energies -74.4945668 -74.2693708 -74.0814651 -73.3635708 -72.6175237 -71.6749423 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0201980 0.0345297 0.0452425 0.0669265 0.0800210 0.0805534 0.0856530 0.7281717 0.7319033 0.7468983 0.7699530 0.7807872 0.7807872 0.8159766 0.8598935 0.9080803 
+
+ saved energies -75.2609961 -74.4952758 -74.4327909 -74.3351492 -74.2796128 -74.2154818 -74.0592566 -74.0382632 -73.9794877 -73.9024742 -73.7184735 -73.6248872 -73.5003080 -73.3471548 -72.8022609 -72.6207196 
+
+ >>> u+d contributions  -0.024437466661296623 
+
+ >>> uu+dd contributions  -0.05656468248718543 
+
+ >>> ud contributions  -0.1390522646282622 
+
+ >>> final result  -75.52475522402682 
+
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     ├───┤
+q_2: ┤ X ├
+     └───┘
+q_3: ─────
+          
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0940055 0.7677023 0.8592825 0.9101329 
+
+ saved energies -74.8913189 -74.6384657 -74.5389392 -74.5111071 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.1018528 0.8339244 0.8592825 0.9101329 
+
+ saved energies -74.7564994 -74.6372996 -74.5361995 -73.5591174 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0346348 0.0630858 0.0867332 0.7288284 0.7524758 0.7809268 
+
+ saved energies -74.4951141 -74.3698285 -74.3006080 -74.1509291 -73.8636140 -72.7061010 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0373467 0.0716695 0.0830527 0.7695436 0.7809268 0.8152496 
+
+ saved energies -74.4938446 -74.2679593 -74.0883143 -73.3155259 -72.6847172 -71.7409806 
+
+lindep  1e-15
+ >>> overlap matrix eigenvalues 0.0250563 0.0373467 0.0484517 0.0630858 0.0783259 0.0830527 0.0867332 0.7288284 0.7323951 0.7524758 0.7695436 0.7809268 0.7809268 0.8152496 0.8600707 0.9105017 
+
+ saved energies -74.4944793 -74.4319944 -74.3424582 -74.2671570 -74.2150333 -74.2145389 -74.1146362 -74.0442800 -74.0042129 -73.8542479 -73.8345583 -73.6187445 -73.4962129 -73.2997296 -72.8428985 -72.6858116 
+
+ >>> u+d contributions  -0.02388578231690973 
+
+ >>> uu+dd contributions  -0.05605558817718853 
+
+ >>> ud contributions  -0.13874023051399648 
+
+ >>> final result  -75.52444318991256 
+

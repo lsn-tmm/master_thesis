@@ -1,0 +1,799 @@
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../nevpt2/src/')
+import time
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+start = time.time()
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='6-31++g**',spin=1,charge=0,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+#outfile.write("IAO, [1s2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+#outfile.write("IAO, [1s2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+#outfile.write("FULL, [1s2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+#outfile.write("FULL, [1s2s frozen] FCI energy %.12f \n" % BO_IAO_external_solver.solve_with_fci()[0])
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+#outfile.write("FCI+FCI [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s2s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("VQE(q-UCCSD)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_q_uccsd_output.npy',allow_pickle=True).item()
+outfile.write("VQE(q-UCCSD) energy %.12f \n" % x['energy'])
+
+VQE_settings.ansatz = 'su2'
+VQE_settings.optimizer = 'cg'
+VQE_settings.reps = 3
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("statevector --- VQE(Ry)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("statevector --- VQE(Ry) energy (I) %.12f \n" % x['energy'])
+#outfile.write("statevector --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("statevector --- VQE(Ry)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("statevector --- VQE(Ry) energy (II) %.12f \n" % x['energy'])
+#outfile.write("statevector --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'qasm_simulator'
+VQE_settings.optimizer = 'spsa'
+VQE_settings.shots = 8000
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("qasm, ideal --- VQE+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("qasm, ideal --- VQE(Ry) energy %.12f \n" % x['energy'])
+#outfile.write("qasm, ideal --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+end = time.time()
+
+outfile.write("Total time execution %.2f s\n" % (end-start))
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab45.labcalcolo.lab', release='4.18.0-348.7.1.el8_5.x86_64', version='#1 SMP Tue Dec 21 19:02:23 UTC 2021', machine='x86_64', processor='x86_64')  Threads 12
+Python 3.8.8 (default, Apr 13 2021, 19:58:26) 
+[GCC 7.3.0]
+numpy 1.20.1  scipy 1.6.2
+Date: Fri Jan 21 16:05:49 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.8/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 2
+[INPUT] num. electrons = 9
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 1
+[INPUT] symmetry True subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT]  1 O      0.000000000000   0.000000000000   0.000000000000 AA    0.000000000000   0.000000000000   0.000000000000 Bohr
+[INPUT]  2 H      0.000000000000   0.000000000000   0.800000000000 AA    0.000000000000   0.000000000000   1.511780899652 Bohr
+
+nuclear repulsion = 5.2917721092
+point group symmetry = Coov
+num. orbitals of irrep A1 = 12
+num. orbitals of irrep E1x = 5
+num. orbitals of irrep E1y = 5
+num. orbitals of irrep E2x = 1
+num. orbitals of irrep E2y = 1
+number of shells = 12
+number of NR pGTOs = 39
+number of NR cGTOs = 24
+basis = 6-31++g**
+ecp = {}
+CPU time:         4.79
+Freeze 0 electrons in irreps []
+    9 free electrons in irreps A1 E1x E1y E2x E2y
+
+
+
+
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> ********
+method = SymAdaptedROHF-ROHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpv9jdf80f
+max_memory 4000 MB (current use 270 MB)
+num. doubly occ = 4  num. singly occ = 1
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpv9jdf80f
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 270 MB)
+Set conv_tol_grad to 3.16228e-05
+HOMO (E1y) = -0.460365391979468  LUMO (A1) = 0.0445370895541145
+Initial guess E= -75.3417974477075  |g|= 0.19937
+macro= 0  E= -75.34954099004  delta_E= -0.00774354  |g|= 0.19937  2 KF 5 JK
+macro= 1  E= -75.3498359810613  delta_E= -0.000294991  |g|= 0.0943269  2 KF 5 JK
+macro= 2  E= -75.3496810945947  delta_E= 0.000154886  |g|= 0.0673972  2 KF 5 JK
+macro= 3  E= -75.3490600751226  delta_E= 0.000621019  |g|= 0.0925988  2 KF 5 JK
+macro= 4  E= -75.3499416238624  delta_E= -0.000881549  |g|= 0.0866526  2 KF 5 JK
+macro= 5  E= -75.3490035600156  delta_E= 0.000938064  |g|= 0.0876201  2 KF 5 JK
+macro= 6  E= -75.3499651565367  delta_E= -0.000961597  |g|= 0.0878754  2 KF 5 JK
+macro= 7  E= -75.3489999643652  delta_E= 0.000965192  |g|= 0.0870588  2 KF 5 JK
+macro= 8  E= -75.3499558242991  delta_E= -0.00095586  |g|= 0.0878412  2 KF 5 JK
+macro= 9  E= -75.3489866201674  delta_E= 0.000969204  |g|= 0.0872107  2 KF 5 JK
+macro= 10  E= -75.349951271631  delta_E= -0.000964651  |g|= 0.0880468  2 KF 5 JK
+macro= 11  E= -75.3489741011772  delta_E= 0.00097717  |g|= 0.0873104  2 KF 5 JK
+macro= 12  E= -75.3499479328224  delta_E= -0.000973832  |g|= 0.0882537  2 KF 5 JK
+macro= 13  E= -75.3489620253425  delta_E= 0.000985907  |g|= 0.0874056  2 KF 5 JK
+macro= 14  E= -75.3499447152111  delta_E= -0.00098269  |g|= 0.0884551  2 KF 5 JK
+macro= 15  E= -75.3489500941027  delta_E= 0.000994621  |g|= 0.0875066  2 KF 5 JK
+macro= 16  E= -75.3499414252622  delta_E= -0.000991331  |g|= 0.0886537  2 KF 5 JK
+macro= 17  E= -75.3489382495157  delta_E= 0.00100318  |g|= 0.0876126  2 KF 5 JK
+macro= 18  E= -75.3499380539022  delta_E= -0.000999804  |g|= 0.08885  2 KF 5 JK
+macro= 19  E= -75.3489264929504  delta_E= 0.00101156  |g|= 0.0877215  2 KF 5 JK
+macro= 20  E= -75.3499346256002  delta_E= -0.00100813  |g|= 0.089044  2 KF 5 JK
+macro= 21  E= -75.3489148353217  delta_E= 0.00101979  |g|= 0.087832  2 KF 5 JK
+macro= 22  E= -75.3499311641342  delta_E= -0.00101633  |g|= 0.0892354  2 KF 5 JK
+macro= 23  E= -75.3489032859485  delta_E= 0.00102788  |g|= 0.0879431  2 KF 5 JK
+macro= 24  E= -75.3499276865684  delta_E= -0.0010244  |g|= 0.0894242  2 KF 5 JK
+macro= 25  E= -75.3488918510709  delta_E= 0.00103584  |g|= 0.0880543  2 KF 5 JK
+macro= 26  E= -75.3499242040126  delta_E= -0.00103235  |g|= 0.0896103  2 KF 5 JK
+macro= 27  E= -75.3488805344718  delta_E= 0.00104367  |g|= 0.0881651  2 KF 5 JK
+macro= 28  E= -75.3499207234532  delta_E= -0.00104019  |g|= 0.0897938  2 KF 5 JK
+macro= 29  E= -75.3488693382986  delta_E= 0.00105139  |g|= 0.0882755  2 KF 5 JK
+macro= 30  E= -75.3499172492696  delta_E= -0.00104791  |g|= 0.0899747  2 KF 5 JK
+macro= 31  E= -75.3488582636784  delta_E= 0.00105899  |g|= 0.0883852  2 KF 5 JK
+macro= 32  E= -75.349913784263  delta_E= -0.00105552  |g|= 0.0901529  2 KF 5 JK
+macro= 33  E= -75.3488473111189  delta_E= 0.00106647  |g|= 0.0884941  2 KF 5 JK
+macro= 34  E= -75.3499103303005  delta_E= -0.00106302  |g|= 0.0903284  2 KF 5 JK
+macro= 35  E= -75.3488364807513  delta_E= 0.00107385  |g|= 0.0886024  2 KF 5 JK
+macro= 36  E= -75.3499068886986  delta_E= -0.00107041  |g|= 0.0905014  2 KF 5 JK
+macro= 37  E= -75.3488257724715  delta_E= 0.00108112  |g|= 0.0887098  2 KF 5 JK
+macro= 38  E= -75.3499034604515  delta_E= -0.00107769  |g|= 0.0906717  2 KF 5 JK
+macro= 39  E= -75.3488151860249  delta_E= 0.00108827  |g|= 0.0888164  2 KF 5 JK
+macro= 40  E= -75.3499000463599  delta_E= -0.00108486  |g|= 0.0908395  2 KF 5 JK
+macro= 41  E= -75.3488047210529  delta_E= 0.00109533  |g|= 0.0889222  2 KF 5 JK
+macro= 42  E= -75.349896647107  delta_E= -0.00109193  |g|= 0.0910048  2 KF 5 JK
+macro= 43  E= -75.3487943771212  delta_E= 0.00110227  |g|= 0.0890272  2 KF 5 JK
+macro= 44  E= -75.3498932633006  delta_E= -0.00109889  |g|= 0.0911676  2 KF 5 JK
+macro= 45  E= -75.3487841537358  delta_E= 0.00110911  |g|= 0.0891314  2 KF 5 JK
+macro= 46  E= -75.3498898954973  delta_E= -0.00110574  |g|= 0.0913279  2 KF 5 JK
+macro= 47  E= -75.3487740503532  delta_E= 0.00111585  |g|= 0.0892347  2 KF 5 JK
+macro= 48  E= -75.3498865442157  delta_E= -0.00111249  |g|= 0.0914858  2 KF 5 JK
+macro= 49  E= -75.3487640663868  delta_E= 0.00112248  |g|= 0.0893371  2 KF 5 JK
+Canonicalize SCF orbitals
+macro X = 50  E=-75.3487640663868  |g|= 0.0893371  total 101 KF 301 JK
+SCF not converged.
+SCF energy = -75.3487640663868
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+Freeze 0 electrons in irreps []
+    9 free electrons in irreps A1 E1x E1y E2x E2y
+
+
+
+
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> ********
+method = SymAdaptedROHF-ROHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpv9jdf80f
+max_memory 4000 MB (current use 279 MB)
+num. doubly occ = 4  num. singly occ = 1
+******** <class 'pyscf.scf.hf_symm.SymAdaptedROHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpv9jdf80f
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 279 MB)
+Set conv_tol_grad to 3.16228e-05
+HOMO (E1y) = -0.28999400794083  LUMO (A1) = 0.0460404125748801
+Initial guess E= -75.3514748250917  |g|= 0.0582451
+macro= 0  E= -75.3520237855768  delta_E= -0.00054896  |g|= 0.0582451  2 KF 5 JK
+macro= 1  E= -75.3520822027448  delta_E= -5.84172e-05  |g|= 0.0237057  2 KF 5 JK
+macro= 2  E= -75.3519243751763  delta_E= 0.000157828  |g|= 0.0149301  2 KF 5 JK
+macro= 3  E= -75.3520771569472  delta_E= -0.000152782  |g|= 0.029966  2 KF 5 JK
+macro= 4  E= -75.3519166223164  delta_E= 0.000160535  |g|= 0.0127776  2 KF 5 JK
+macro= 5  E= -75.3520571659161  delta_E= -0.000140544  |g|= 0.0314537  2 KF 5 JK
+macro= 6  E= -75.3519949135514  delta_E= 6.22524e-05  |g|= 0.0147237  2 KF 5 JK
+macro= 7  E= -75.3520368791434  delta_E= -4.19656e-05  |g|= 0.0256545  2 KF 5 JK
+macro= 8  E= -75.3519599350417  delta_E= 7.69441e-05  |g|= 0.0167296  2 KF 5 JK
+macro= 9  E= -75.3520186548313  delta_E= -5.87198e-05  |g|= 0.0280571  2 KF 5 JK
+macro= 10  E= -75.3519971616264  delta_E= 2.14932e-05  |g|= 0.0190509  2 KF 5 JK
+macro= 11  E= -75.352032034554  delta_E= -3.48729e-05  |g|= 0.025655  2 KF 5 JK
+macro= 12  E= -75.3519747761878  delta_E= 5.72584e-05  |g|= 0.0174382  2 KF 5 JK
+macro= 13  E= -75.3520251534878  delta_E= -5.03773e-05  |g|= 0.0269842  2 KF 5 JK
+macro= 14  E= -75.3519885662601  delta_E= 3.65872e-05  |g|= 0.0184298  2 KF 5 JK
+macro= 15  E= -75.3520310802025  delta_E= -4.25139e-05  |g|= 0.0262239  2 KF 5 JK
+macro= 16  E= -75.3519807221183  delta_E= 5.03581e-05  |g|= 0.0176656  2 KF 5 JK
+macro= 17  E= -75.352029227381  delta_E= -4.85053e-05  |g|= 0.0266092  2 KF 5 JK
+macro= 18  E= -75.3519850186815  delta_E= 4.42087e-05  |g|= 0.0179815  2 KF 5 JK
+macro= 19  E= -75.3520309309627  delta_E= -4.59123e-05  |g|= 0.0263952  2 KF 5 JK
+macro= 20  E= -75.3519825940218  delta_E= 4.83369e-05  |g|= 0.0177442  2 KF 5 JK
+macro= 21  E= -75.3520301490875  delta_E= -4.75551e-05  |g|= 0.0265119  2 KF 5 JK
+macro= 22  E= -75.3519838169575  delta_E= 4.63321e-05  |g|= 0.0178592  2 KF 5 JK
+macro= 23  E= -75.3520304783679  delta_E= -4.66614e-05  |g|= 0.026458  2 KF 5 JK
+macro= 24  E= -75.3519830633992  delta_E= 4.7415e-05  |g|= 0.0178012  2 KF 5 JK
+macro= 25  E= -75.3520301134499  delta_E= -4.70501e-05  |g|= 0.0264975  2 KF 5 JK
+macro= 26  E= -75.3519833809645  delta_E= 4.67325e-05  |g|= 0.0178448  2 KF 5 JK
+macro= 27  E= -75.3520300892832  delta_E= -4.67083e-05  |g|= 0.0264875  2 KF 5 JK
+macro= 28  E= -75.3519831161477  delta_E= 4.69731e-05  |g|= 0.017836  2 KF 5 JK
+macro= 29  E= -75.3520298695924  delta_E= -4.67534e-05  |g|= 0.0265046  2 KF 5 JK
+macro= 30  E= -75.3519831693594  delta_E= 4.67002e-05  |g|= 0.0178564  2 KF 5 JK
+macro= 31  E= -75.3520297531135  delta_E= -4.65838e-05  |g|= 0.026507  2 KF 5 JK
+macro= 32  E= -75.3519830480661  delta_E= 4.6705e-05  |g|= 0.017861  2 KF 5 JK
+macro= 33  E= -75.3520295798094  delta_E= -4.65317e-05  |g|= 0.0265175  2 KF 5 JK
+macro= 34  E= -75.3519830229416  delta_E= 4.65569e-05  |g|= 0.0178742  2 KF 5 JK
+macro= 35  E= -75.3520294380762  delta_E= -4.64151e-05  |g|= 0.0265235  2 KF 5 JK
+macro= 36  E= -75.3519829445046  delta_E= 4.64936e-05  |g|= 0.0178826  2 KF 5 JK
+macro= 37  E= -75.3520292795851  delta_E= -4.63351e-05  |g|= 0.026532  2 KF 5 JK
+macro= 38  E= -75.351982895705  delta_E= 4.63839e-05  |g|= 0.0178936  2 KF 5 JK
+macro= 39  E= -75.3520291311095  delta_E= -4.62354e-05  |g|= 0.0265392  2 KF 5 JK
+macro= 40  E= -75.3519828302917  delta_E= 4.63008e-05  |g|= 0.0179031  2 KF 5 JK
+macro= 41  E= -75.3520289778193  delta_E= -4.61475e-05  |g|= 0.026547  2 KF 5 JK
+macro= 42  E= -75.351982774177  delta_E= 4.62036e-05  |g|= 0.0179133  2 KF 5 JK
+macro= 43  E= -75.3520288279913  delta_E= -4.60538e-05  |g|= 0.0265544  2 KF 5 JK
+macro= 44  E= -75.3519827127771  delta_E= 4.61152e-05  |g|= 0.0179229  2 KF 5 JK
+macro= 45  E= -75.3520286769952  delta_E= -4.59642e-05  |g|= 0.0265621  2 KF 5 JK
+macro= 46  E= -75.3519826543395  delta_E= 4.60227e-05  |g|= 0.0179328  2 KF 5 JK
+macro= 47  E= -75.3520285274386  delta_E= -4.58731e-05  |g|= 0.0265696  2 KF 5 JK
+macro= 48  E= -75.3519825941808  delta_E= 4.59333e-05  |g|= 0.0179425  2 KF 5 JK
+macro= 49  E= -75.3520283778509  delta_E= -4.57837e-05  |g|= 0.0265771  2 KF 5 JK
+Canonicalize SCF orbitals
+macro X = 50  E=-75.3520283778509  |g|= 0.0265771  total 101 KF 301 JK
+SCF not converged.
+SCF energy = -75.3520283778509
+**** SCF Summaries ****
+Total Energy =                         -75.352028377850885
+Nuclear Repulsion Energy =               5.291772109200000
+One-electron Energy =                 -114.073371273734921
+Two-electron Energy =                   33.429570786684039
+Wave-function symmetry = Coov
+occupancy for each irrep:     A1  E1x  E1y  E2x  E2y
+double occ                     3    1    0    0    0
+single occ                     0    0    1    0    0
+**** MO energy ****
+                          Roothaan           | alpha              | beta
+MO #1   (A1  #1 ) energy= -20.6314820872936  | -20.6480507442801  | -20.614913430307   occ= 2
+MO #2   (A1  #2 ) energy= -1.38632905594468  | -1.4532800252258   | -1.31937808666355  occ= 2
+MO #3   (A1  #3 ) energy= -0.709763503472147 | -0.734511486822207 | -0.685015520122086 occ= 2
+MO #4   (E1x #1 ) energy= -0.550377958656917 | -0.569548441943509 | -0.531207475370325 occ= 2
+MO #5   (E1y #1 ) energy= -0.261052755209926 | -0.658324489632356 | 0.136218979212501  occ= 1
+MO #6   (A1  #4 ) energy= 0.0466835554251388 | 0.0459641114361895 | 0.0474029994140867 occ= 0
+MO #7   (A1  #5 ) energy= 0.234234505570959  | 0.232921651716374  | 0.235547359425543  occ= 0
+MO #8   (E1y #2 ) energy= 0.240155254109396  | 0.228527042386445  | 0.251783465832347  occ= 0
+MO #9   (E1x #2 ) energy= 0.245010183718586  | 0.243442526710782  | 0.24657784072639   occ= 0
+MO #10  (A1  #6 ) energy= 0.296707607039518  | 0.291514598323796  | 0.301900615755236  occ= 0
+MO #11  (A1  #7 ) energy= 0.43132619917321   | 0.427269040732179  | 0.435383357614227  occ= 0
+MO #12  (A1  #8 ) energy= 1.31941092599786   | 1.31145835598851   | 1.32736349600722   occ= 0
+MO #13  (E1x #3 ) energy= 1.37680041636659   | 1.36881188533744   | 1.38478894739574   occ= 0
+MO #14  (E1y #3 ) energy= 1.38030431032004   | 1.3108418206192    | 1.44976680002088   occ= 0
+MO #15  (A1  #9 ) energy= 1.38784930627609   | 1.37534562145779   | 1.4003529910944    occ= 0
+MO #16  (A1  #10) energy= 1.74609689358186   | 1.72795702443615   | 1.76423676272758   occ= 0
+MO #17  (E1y #4 ) energy= 1.85165200556521   | 1.80895348846574   | 1.89435052266468   occ= 0
+MO #18  (E1x #4 ) energy= 1.85807480660365   | 1.85238800356666   | 1.86376160964065   occ= 0
+MO #19  (E2x #1 ) energy= 2.05496031675323   | 2.00748665838365   | 2.10243397512281   occ= 0
+MO #20  (E2y #1 ) energy= 2.05496031675323   | 2.00748665838365   | 2.10243397512281   occ= 0
+MO #21  (A1  #11) energy= 3.01468978988927   | 3.00113281095261   | 3.02824676882594   occ= 0
+MO #22  (E1y #5 ) energy= 3.14246302126872   | 3.12595964191345   | 3.15896640062399   occ= 0
+MO #23  (E1x #5 ) energy= 3.16075618002378   | 3.15758512676342   | 3.16392723328414   occ= 0
+MO #24  (A1  #12) energy= 4.36018428488487   | 4.35404158898053   | 4.3663269807892    occ= 0
+ ** Mulliken pop on meta-lowdin orthogonal AOs  **
+ ** Mulliken pop  **
+pop of  0 O 1s        1.99999
+pop of  0 O 2s        1.73406
+pop of  0 O 3s        0.00996
+pop of  0 O 4s        0.00187
+pop of  0 O 2px       1.99258
+pop of  0 O 2py       0.99635
+pop of  0 O 2pz       1.61251
+pop of  0 O 3px       0.00169
+pop of  0 O 3py       0.00025
+pop of  0 O 3pz       0.00595
+pop of  0 O 4px       0.00136
+pop of  0 O 4py       0.00144
+pop of  0 O 4pz       0.00098
+pop of  0 O 3dxy      0.00000
+pop of  0 O 3dyz      0.00104
+pop of  0 O 3dz^2     0.01187
+pop of  0 O 3dxz      0.00193
+pop of  0 O 3dx2-y2    0.00000
+pop of  1 H 1s        0.58661
+pop of  1 H 2s        0.02046
+pop of  1 H 3s        0.01473
+pop of  1 H 2px       0.00244
+pop of  1 H 2py       0.00093
+pop of  1 H 2pz       0.00100
+ ** Mulliken atomic charges  **
+charge of  0O =     -0.37384
+charge of  1H =      0.37384
+Dipole moment(X, Y, Z, Debye):  0.00000,  0.00000,  1.78265
+#INFO: **** input file is /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/main.py ****
+import numpy as np
+import sys
+sys.path.append('../../../../nevpt2/src/')
+import time
+from basis_constructor import Basis_Constructor
+from bo_class          import BO_class
+from bo_solver         import BO_solver
+from fci_qse_solver    import FCI_QSE_solver
+from fci_solver        import FCI_solver
+from vqe_qse_solver    import VQE_QSE_solver
+from pyscf             import gto,scf
+from VQE_types         import vqe_data
+
+start = time.time()
+
+outfile = open('results.txt','w')
+mol = gto.M(atom=[['O',(0,0,0)],['H',(0,0,0.80)]],basis='6-31++g**',spin=1,charge=0,
+            symmetry=True,verbose=4).build()
+mf  = scf.ROHF(mol)
+mf  = scf.newton(mf)
+mf.kernel()
+if(not mf.converged):
+   mf.kernel(mf.make_rdm1())
+mf.analyze()
+
+BC_object = Basis_Constructor(mol,mf)
+BC_object.compute_core_valence()
+BC_object.compute_external()
+
+BO_IAO = BO_class(mol,mf)
+BO_IAO.transform_integrals(BC_object.valence)
+BO_IAO = BO_IAO.freeze_orbitals([0,1])
+BO_IAO_solver = BO_solver(BO_IAO)
+#outfile.write("IAO, [1s2s frozen] SCF energy %.12f \n" % BO_IAO_solver.solve_with_scf()[1])
+#outfile.write("IAO, [1s2s frozen] FCI energy %.12f \n" % BO_IAO_solver.solve_with_fci()[0])
+
+BO_IAO_external = BO_class(mol,mf)
+BO_IAO_external.transform_integrals(BC_object.return_basis())
+BO_IAO_external = BO_IAO_external.freeze_orbitals([0,1])
+BO_IAO_external_solver = BO_solver(BO_IAO_external)
+#outfile.write("FULL, [1s2s frozen] SCF energy %.12f \n" % BO_IAO_external_solver.solve_with_scf()[1])
+#outfile.write("FULL, [1s2s frozen] FCI energy %.12f \n" % BO_IAO_external_solver.solve_with_fci()[0])
+
+SOLVER = FCI_solver(BO_IAO,BO_IAO_external)
+#outfile.write("FCI+FCI [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+SOLVER = FCI_QSE_solver(BO_IAO,BO_IAO_external)
+outfile.write("FCI+QSE [1s2s frozen] NEVPT2 energy  %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("VQE(q-UCCSD)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_q_uccsd_output.npy',allow_pickle=True).item()
+outfile.write("VQE(q-UCCSD) energy %.12f \n" % x['energy'])
+
+VQE_settings.ansatz = 'su2'
+VQE_settings.optimizer = 'cg'
+VQE_settings.reps = 3
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("statevector --- VQE(Ry)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("statevector --- VQE(Ry) energy (I) %.12f \n" % x['energy'])
+#outfile.write("statevector --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings.instance = 'statevector_simulator'
+VQE_settings.optimizer = 'cobyla'
+VQE_settings.max_iter = 0
+VQE_settings.initial_point = x['opt_params']
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("statevector --- VQE(Ry)+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+
+
+#  -----------------------------------------------------------------------------
+
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("statevector --- VQE(Ry) energy (II) %.12f \n" % x['energy'])
+#outfile.write("statevector --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+#  -----------------------------------------------------------------------------
+
+VQE_settings = vqe_data()
+VQE_settings.ansatz = 'su2'
+VQE_settings.reps = 3
+VQE_settings.instance = 'qasm_simulator'
+VQE_settings.optimizer = 'spsa'
+VQE_settings.shots = 8000
+SOLVER = VQE_QSE_solver(BO_IAO,BO_IAO_external)
+SOLVER.set_quantum_variables(VQE_settings)
+outfile.write("qasm, ideal --- VQE+QSE [1s2s frozen] NEVPT2 energy %.12f \n" % SOLVER.compute_nevpt2_energy())
+x = np.load('vqe_su2_output.npy',allow_pickle=True).item()
+outfile.write("qasm, ideal --- VQE(Ry) energy %.12f \n" % x['energy'])
+#outfile.write("qasm, ideal --- VQE(Ry) angle %s \n" % str(x['opt_params']))
+
+end = time.time()
+
+outfile.write("Total time execution %.2f s\n" % (end-start))
+#INFO: ******************** input file end ********************
+
+
+System: uname_result(system='Linux', node='lab45.labcalcolo.lab', release='4.18.0-348.7.1.el8_5.x86_64', version='#1 SMP Tue Dec 21 19:02:23 UTC 2021', machine='x86_64', processor='x86_64')  Threads 12
+Python 3.8.8 (default, Apr 13 2021, 19:58:26) 
+[GCC 7.3.0]
+numpy 1.20.1  scipy 1.6.2
+Date: Fri Jan 21 16:05:51 2022
+PySCF version 2.0.1
+PySCF path  /home/studenti/alessandro.tammaro/.local/lib/python3.8/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 4
+[INPUT] num. atoms = 0
+[INPUT] num. electrons = 0
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry False subgroup None
+[INPUT] Mole.unit = angstrom
+
+nuclear repulsion = 0
+number of shells = 0
+number of NR pGTOs = 0
+number of NR cGTOs = 0
+basis = sto-3g
+ecp = {}
+CPU time:        23.40
+
+WARN: Newton solver expects mo_coeff with mo_occ as initial guess but mo_occ is not found in the arguments.
+      The given argument is treated as density matrix.
+
+
+
+
+
+******** <class 'pyscf.scf.rohf.ROHF'> ********
+method = ROHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpr_5j18hn
+max_memory 4000 MB (current use 291 MB)
+num. doubly occ = 4  num. singly occ = 1
+******** <class 'pyscf.scf.rohf.ROHF'> Newton solver flags ********
+SCF tol = 1e-09
+conv_tol_grad = None
+max. SCF cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/studenti/alessandro.tammaro/Desktop/qasm_test/6-31ppgss/radical/R_0.80/tmpr_5j18hn
+max_cycle_inner = 12
+max_stepsize = 0.05
+ah_start_tol = 1e+09
+ah_level_shift = 0
+ah_conv_tol = 1e-12
+ah_lindep = 1e-14
+ah_start_cycle = 1
+ah_max_cycle = 40
+ah_grad_trust_region = 2.5
+kf_interval = 4
+kf_trust_region = 5
+canonicalization = True
+max_memory 4000 MB (current use 291 MB)
+Set conv_tol_grad to 3.16228e-05
+  HOMO = -0.261052755209928  LUMO = 0.595070604765852
+Initial guess E= -75.3520338644512  |g|= 0.000579686
+macro= 0  E= -75.3520339858886  delta_E= -1.21437e-07  |g|= 0.000579686  1 KF 3 JK
+macro= 1  E= -75.3520339858886  delta_E= -2.84217e-14  |g|= 1.88961e-06  1 KF 2 JK
+Canonicalize SCF orbitals
+macro X = 2  E=-75.3520339858886  |g|= 1.88961e-06  total 3 KF 8 JK
+converged SCF energy = -75.3520339858886
+u+d contributions  -0.002920328225603699
+uu+dd contributions  -0.020939703827816413
+ud contributions  -0.06624837114034934
+NEVPT2 time: 0.04 s
+----- VQE data ------
+target_sector:  None
+optimizer:  bfgs
+max_iter:  1000
+instance:  statevector_simulator
+shots:  1000
+ansatz:  q_uccsd
+initial_point:  None
+
+
+ >>>>> AM I PREPARED?  False
+qse operators prepared for u 	 time: 0.66 s
+qse operators prepared for d 	 time: 0.72 s
+qse operators prepared for uu 	 time: 3.51 s
+qse operators prepared for dd 	 time: 3.58 s
+qse operators prepared for ud 	 time: 26.34 s
+In the tapering subroutine, i=0, E(i)=-74.717967, i_min=-1
+In the tapering subroutine, i=1, E(i)=-75.174636, i_min=0
+In the tapering subroutine, i=2, E(i)=-75.352034, i_min=1
+In the tapering subroutine, i=3, E(i)=-74.743361, i_min=2
+In the tapering subroutine, i=4, E(i)=-75.348350, i_min=2
+In the tapering subroutine, i=5, E(i)=-74.732447, i_min=2
+In the tapering subroutine, i=6, E(i)=-74.783251, i_min=2
+In the tapering subroutine, i=7, E(i)=-74.775313, i_min=2
+In the tapering subroutine, i=8, E(i)=-75.174636, i_min=2
+In the tapering subroutine, i=9, E(i)=-75.215021, i_min=2
+In the tapering subroutine, i=10, E(i)=-74.770435, i_min=2
+In the tapering subroutine, i=11, E(i)=-75.352034, i_min=2
+In the tapering subroutine, i=12, E(i)=-74.758682, i_min=2
+In the tapering subroutine, i=13, E(i)=-75.348350, i_min=2
+In the tapering subroutine, i=14, E(i)=-74.775313, i_min=2
+In the tapering subroutine, i=15, E(i)=-74.821592, i_min=2
+
+ Total number of operators:  396
+after tapering qubits(H) =  4 	 time: 0.78 s
+qse operators tapered for qse_s_u 10 of 10 	 mean: 0.03 s
+qse operators tapered for qse_h_u 10 of 10 	 mean: 0.55 s
+qse operators tapered for qse_s_d 10 of 10 	 mean: 0.03 s
+qse operators tapered for qse_h_d 10 of 10 	 mean: 0.55 s
+qse operators tapered for qse_s_uu 21 of 21 	 mean: 0.03 s
+qse operators tapered for qse_h_uu 21 of 21 	 mean: 0.56 s
+qse operators tapered for qse_s_dd 21 of 21 	 mean: 0.03 s
+qse operators tapered for qse_h_dd 21 of 21 	 mean: 0.56 s
+qse operators tapered for qse_s_ud 136 of 136 	 mean: 0.04 s
+qse operators tapered for qse_h_ud 136 of 136 	 mean: 1.18 s
+Taper time: 203.86 s
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     └───┘
+q_2: ─────
+          
+q_3: ─────
+          
+VQE time: 3.98 s
+u+d contributions  -0.002920330573897118
+uu+dd contributions  -0.020939686706518638
+ud contributions  -0.06623710737176536
+NEVPT2 time: 4.18 s
+ >>>>> AM I PREPARED?  True
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     └───┘
+q_2: ─────
+          
+q_3: ─────
+          
+VQE time: 6.53 s
+u+d contributions  -0.002914247864566015
+uu+dd contributions  -0.020933465826320406
+ud contributions  -0.0662303942414216
+NEVPT2 time: 1.70 s
+ >>>>> AM I PREPARED?  True
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     └───┘
+q_2: ─────
+          
+q_3: ─────
+          
+VQE time: 0.05 s
+u+d contributions  -0.002914247864566015
+uu+dd contributions  -0.020933465826320406
+ud contributions  -0.0662303942414216
+NEVPT2 time: 1.60 s
+----- VQE data ------
+target_sector:  None
+optimizer:  bfgs
+max_iter:  1000
+instance:  statevector_simulator
+shots:  1000
+ansatz:  q_uccsd
+initial_point:  None
+
+
+ >>>>> AM I PREPARED?  False
+qse operators prepared for u 	 time: 0.66 s
+qse operators prepared for d 	 time: 0.66 s
+qse operators prepared for uu 	 time: 3.54 s
+qse operators prepared for dd 	 time: 3.56 s
+qse operators prepared for ud 	 time: 26.00 s
+In the tapering subroutine, i=0, E(i)=-74.717967, i_min=-1
+In the tapering subroutine, i=1, E(i)=-75.174636, i_min=0
+In the tapering subroutine, i=2, E(i)=-75.352034, i_min=1
+In the tapering subroutine, i=3, E(i)=-74.743361, i_min=2
+In the tapering subroutine, i=4, E(i)=-75.348350, i_min=2
+In the tapering subroutine, i=5, E(i)=-74.732447, i_min=2
+In the tapering subroutine, i=6, E(i)=-74.783251, i_min=2
+In the tapering subroutine, i=7, E(i)=-74.775313, i_min=2
+In the tapering subroutine, i=8, E(i)=-75.174636, i_min=2
+In the tapering subroutine, i=9, E(i)=-75.215021, i_min=2
+In the tapering subroutine, i=10, E(i)=-74.770435, i_min=2
+In the tapering subroutine, i=11, E(i)=-75.352034, i_min=2
+In the tapering subroutine, i=12, E(i)=-74.758682, i_min=2
+In the tapering subroutine, i=13, E(i)=-75.348350, i_min=2
+In the tapering subroutine, i=14, E(i)=-74.775313, i_min=2
+In the tapering subroutine, i=15, E(i)=-74.821592, i_min=2
+
+ Total number of operators:  396
+after tapering qubits(H) =  4 	 time: 0.75 s
+qse operators tapered for qse_s_u 10 of 10 	 mean: 0.03 s
+qse operators tapered for qse_h_u 10 of 10 	 mean: 0.56 s
+qse operators tapered for qse_s_d 10 of 10 	 mean: 0.03 s
+qse operators tapered for qse_h_d 10 of 10 	 mean: 0.55 s
+qse operators tapered for qse_s_uu 21 of 21 	 mean: 0.03 s
+qse operators tapered for qse_h_uu 21 of 21 	 mean: 0.55 s
+qse operators tapered for qse_s_dd 21 of 21 	 mean: 0.03 s
+qse operators tapered for qse_h_dd 21 of 21 	 mean: 0.55 s
+qse operators tapered for qse_s_ud 136 of 136 	 mean: 0.04 s
+qse operators tapered for qse_h_ud 136 of 136 	 mean: 1.16 s
+Taper time: 200.43 s
+          
+q_0: ─────
+     ┌───┐
+q_1: ┤ X ├
+     └───┘
+q_2: ─────
+          
+q_3: ─────
+          
+VQE time: 774.56 s
+attention: IMAG (0.004499999999999997+0.0005624999999999996j)
+attention: IMAG (-0.48663641613295455-0.3732147360560081j)
+attention: IMAG (-0.0024999999999999983-0.0011249999999999993j)
+attention: IMAG (-0.0957069760110633+0.06411451488636385j)
+attention: IMAG (0.0009062499999999997-0.0019374999999999987j)
+attention: IMAG (-0.0011874999999999987-0.003374999999999998j)
+attention: IMAG (0.16239070158530738-0.2017470141697348j)
+attention: IMAG (0.05927550633717232-0.047834006289031956j)
+attention: IMAG (0.0007812499999999997+0.003218749999999998j)
+attention: IMAG (0.16735508099934174+0.12494714416444175j)
+attention: IMAG (-0.103497857513759+0.20646396407136117j)
+attention: IMAG (0.003062499999999998+0.0006562499999999995j)
+attention: IMAG (0.004437499999999997+0.004281249999999997j)
+attention: IMAG (-0.0014999999999999987-0.008468749999999994j)
+attention: IMAG (-0.0026874999999999985-0.002312499999999998j)
+attention: IMAG (0.0010312499999999992+0.0031249999999999976j)
+attention: IMAG (-0.003031249999999998-0.004406249999999996j)
+attention: IMAG (0.002656249999999999+0.0014999999999999987j)
+attention: IMAG (-0.0015624999999999988+0.0012812499999999994j)
+attention: IMAG (-0.0005624999999999996+0.002374999999999999j)
+attention: IMAG (0.0032499999999999985-0.0021562499999999984j)
+attention: IMAG (0.0032187499999999972-0.005031249999999997j)
+attention: IMAG (0.003187499999999998+0.0024687499999999983j)
+attention: IMAG (-0.0025312499999999983+0.002843749999999998j)
+attention: IMAG (-0.0018437499999999988+0.0019062499999999987j)
+attention: IMAG (0.004156249999999998+0.00031249999999999974j)
+attention: IMAG (0.0001249999999999999+0.0020624999999999984j)
+attention: IMAG (0.004406249999999997+0.0018124999999999986j)
+attention: IMAG (-0.09567511703824833+0.12837652487846532j)
+attention: IMAG (-0.3085856881047905-0.1165209210199244j)
+attention: IMAG (-0.39390724496276197-0.23920694870313938j)
+attention: IMAG (-0.1020011952570695-0.23156991748807715j)
+attention: IMAG (0.048516764661294724+0.00017349165379533589j)
+attention: IMAG (-0.3051274197066614+0.19586022220263324j)
+attention: IMAG (0.07088378972678575+0.1118856917421427j)
+attention: IMAG (0.30223311074446196-0.04207719709709255j)
+attention: IMAG (-0.00653972039523899+0.29751989875345913j)
+attention: IMAG (-0.03888659125377526-0.03045395213106636j)
+attention: IMAG (0.01658568844556347-0.083041748391005j)
+attention: IMAG (0.14353141660358226+0.0967636049910926j)
+attention: IMAG (-0.07461071394787301-0.15907366974527493j)
+attention: IMAG (0.07635108724059826+0.12313374818055348j)
+attention: IMAG (-0.29604843095098027+0.14539130164192324j)
+attention: IMAG (1.1369044881395439e-05+0.00022210697012800808j)
+attention: IMAG (0.1872248108820742-0.16324425874573778j)
+attention: IMAG (1.7653597458271508+0.2135899011944072j)
+attention: IMAG (-0.0768678270796518-0.16999510619849426j)
+attention: IMAG (0.05343728435053275+0.1960605885893716j)
+u+d contributions  0.000505957289554452
+uu+dd contributions  -0.01129372605647385
+ud contributions  -0.05333740482113842
+NEVPT2 time: 100.03 s
